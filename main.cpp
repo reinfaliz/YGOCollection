@@ -19,6 +19,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QRegularExpression>
+#include <QRegularExpressionMatch>
+#include <QRegularExpressionMatchIterator>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -46,7 +49,7 @@ private:
     QSqlTableModel *tableModel;
     QNetworkAccessManager *networkManager;
     
-    // Temporary storage for the card currently being searched
+    // Temporary storage
     QString currentCardName;
     QString currentCardNumber;
 
@@ -59,7 +62,6 @@ private:
             return;
         }
 
-        // Create the table if it doesn't exist
         QSqlQuery query;
         query.exec("CREATE TABLE IF NOT EXISTS collection ("
                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -75,21 +77,21 @@ private:
         // --- Top Row: Search ---
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
-        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., DREV-EN050)");
+        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., DREV-JP050)");
         cardNumberInput->setStyleSheet("padding: 5px;");
         
-        searchBtn = new QPushButton("Search API", this);
+        searchBtn = new QPushButton("Search Yugipedia", this);
         searchLayout->addWidget(cardNumberInput);
         searchLayout->addWidget(searchBtn);
         
-        // --- Middle Row: Input Data (Disabled until a valid card is found) ---
+        // --- Middle Row: Input Data ---
         QHBoxLayout *inputLayout = new QHBoxLayout();
         
         rarityCombo = new QComboBox(this);
-        rarityCombo->setEnabled(false); // Disabled initially
+        rarityCombo->setEnabled(false); 
         
         quantitySpinBox = new QSpinBox(this);
-        quantitySpinBox->setMinimum(1); // Must be a positive integer greater than zero
+        quantitySpinBox->setMinimum(1); 
         quantitySpinBox->setEnabled(false);
         
         addBtn = new QPushButton("Add to Collection", this);
@@ -101,7 +103,6 @@ private:
         inputLayout->addWidget(quantitySpinBox);
         inputLayout->addWidget(addBtn);
 
-        // Status Label
         statusLabel = new QLabel("Ready.", this);
         statusLabel->setStyleSheet("color: gray;");
 
@@ -110,20 +111,17 @@ private:
         tableModel = new QSqlTableModel(this);
         tableModel->setTable("collection");
         tableModel->select();
-        // Allow user to edit quantities/rarities directly in the table
         tableModel->setEditStrategy(QSqlTableModel::OnFieldChange); 
         
         tableView->setModel(tableModel);
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-        tableView->hideColumn(0); // Hide the ID column
+        tableView->hideColumn(0); 
 
-        // Build the main layout
         mainLayout->addLayout(searchLayout);
         mainLayout->addWidget(statusLabel);
         mainLayout->addLayout(inputLayout);
         mainLayout->addWidget(tableView);
 
-        // Connect Buttons
         connect(searchBtn, &QPushButton::clicked, this, &YGOCollection::searchCard);
         connect(addBtn, &QPushButton::clicked, this, &YGOCollection::saveCardToDatabase);
     }
@@ -132,14 +130,17 @@ private:
         QString input = cardNumberInput->text().trimmed().toUpper();
         if (input.isEmpty()) return;
 
-        statusLabel->setText("Searching...");
+        statusLabel->setText("Searching Yugipedia...");
         searchBtn->setEnabled(false);
         
-        // Using YGOPRODeck API. Note: To search by a specific set code like DREV-EN050,
-        // we can fetch the card sets endpoint or do a general text search. 
-        // For this milestone, we will use a generic query and parse the sets.
-        QString apiUrl = "https://db.ygoprodeck.com/api/v7/cardinfo.php?cardset=" + input;
-        networkManager->get(QNetworkRequest(QUrl(apiUrl)));
+        // Yugipedia MediaWiki API endpoint to fetch page content using a set code redirect
+        QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
+        
+        QNetworkRequest request((QUrl(apiUrl)));
+        // MediaWiki requires a User-Agent to avoid getting blocked
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.0 (Contact: user@example.com)");
+        
+        networkManager->get(request);
     }
 
     void saveCardToDatabase() {
@@ -153,9 +154,9 @@ private:
 
         if (query.exec()) {
             statusLabel->setText("Card added successfully!");
-            tableModel->select(); // Refresh the table view
+            statusLabel->setStyleSheet("color: green;");
+            tableModel->select(); 
             
-            // Reset UI for next card
             cardNumberInput->clear();
             rarityCombo->clear();
             rarityCombo->setEnabled(false);
@@ -172,7 +173,8 @@ private slots:
         searchBtn->setEnabled(true);
 
         if (reply->error() != QNetworkReply::NoError) {
-            statusLabel->setText("Error: Invalid card or network issue.");
+            statusLabel->setText("Network Error. Could not reach Yugipedia.");
+            statusLabel->setStyleSheet("color: red;");
             reply->deleteLater();
             return;
         }
@@ -180,54 +182,59 @@ private slots:
         QByteArray response = reply->readAll();
         QJsonDocument jsonDoc = QJsonDocument::fromJson(response);
         QJsonObject rootObj = jsonDoc.object();
+        QJsonObject queryObj = rootObj["query"].toObject();
+        QJsonObject pagesObj = queryObj["pages"].toObject();
+
+        QString pageKey = pagesObj.keys().first();
         
-        // If "data" is missing, the card wasn't found
-        if (!rootObj.contains("data")) {
-            statusLabel->setText("Invalid card number. Not found in database.");
+        // MediaWiki returns a page ID of "-1" if the requested title/redirect doesn't exist
+        if (pageKey == "-1") {
+            statusLabel->setText("Invalid card number. Not found on Yugipedia.");
+            statusLabel->setStyleSheet("color: red;");
             reply->deleteLater();
             return;
         }
 
-        QJsonArray dataArray = rootObj["data"].toArray();
-        QJsonObject firstCard = dataArray[0].toObject();
-        
-        currentCardName = firstCard["name"].toString();
+        QJsonObject pageObj = pagesObj[pageKey].toObject();
+        currentCardName = pageObj["title"].toString();
         currentCardNumber = cardNumberInput->text().trimmed().toUpper();
 
-        // Extract rarities specifically for this set code
+        // Extract the Wikitext to find the rarity
+        QJsonArray revisions = pageObj["revisions"].toArray();
+        QString wikitext = revisions[0].toObject()["slots"].toObject()["main"].toObject()["*"].toString();
+
         QStringList foundRarities;
-        QJsonArray cardSets = firstCard["card_sets"].toArray();
-        for (int i = 0; i < cardSets.size(); ++i) {
-            QJsonObject setObj = cardSets[i].toObject();
-            if (setObj["set_code"].toString() == currentCardNumber) {
-                QString rarity = setObj["set_rarity"].toString();
-                if (!foundRarities.contains(rarity)) {
-                    foundRarities.append(rarity);
-                }
+        
+        // Regex to find standard Yu-Gi-Oh! rarities near the specific set code in the raw wikitext
+        QString prefix = currentCardNumber.section('-', 0, 0); // e.g., DREV
+        QString suffix = currentCardNumber.section('-', 1, 1); // e.g., JP050
+        QString pattern = QString("(?:%1[\\-\\|\\s]*%2)[^\\n]{0,40}?(Common|Rare|Super Rare|Ultra Rare|Secret Rare|Ultimate Rare|Ghost Rare|Holographic Rare|Prismatic Secret Rare|Gold Rare|Collector's Rare|Starlight Rare|Quarter Century Secret Rare)").arg(prefix, suffix);
+        
+        QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
+        QRegularExpressionMatchIterator i = re.globalMatch(wikitext);
+        
+        while (i.hasNext()) {
+            QRegularExpressionMatch match = i.next();
+            QString rarity = match.captured(1).trimmed();
+            // Capitalize the first letter of each word to keep it clean
+            if (!foundRarities.contains(rarity, Qt::CaseInsensitive)) {
+                foundRarities.append(rarity);
             }
         }
 
-        // If the API returned a card but didn't list our specific set code rarity
-        // (Sometimes happens with OCG vs TCG differences), fallback to a generic rarity.
         if (foundRarities.isEmpty()) {
             foundRarities.append("Common (Default)");
         }
 
-        // Update the UI based on rarities found
         rarityCombo->clear();
         rarityCombo->addItems(foundRarities);
-        
-        // If there's only 1 rarity, the combo box handles it automatically, 
-        // but we can lock it to prevent user confusion.
-        if (foundRarities.size() == 1) {
-            rarityCombo->setEnabled(false); 
-        } else {
-            rarityCombo->setEnabled(true);
-        }
+        rarityCombo->setEnabled(foundRarities.size() > 1);
 
         quantitySpinBox->setEnabled(true);
         addBtn->setEnabled(true);
+        
         statusLabel->setText("Card found: " + currentCardName);
+        statusLabel->setStyleSheet("color: black;");
 
         reply->deleteLater();
     }
