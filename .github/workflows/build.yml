@@ -1,0 +1,44 @@
+name: Build Windows Application
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.3'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2019_64'
+
+    - name: Set up MSVC Compiler
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Compile the Application
+      run: |
+        qmake CONFIG+=release YGOCollection.pro
+        nmake
+
+    - name: Bundle Qt Dependencies (windeployqt)
+      run: |
+        mkdir YGOCollection-Release
+        copy release\YGOCollection.exe YGOCollection-Release\
+        windeployqt YGOCollection-Release\YGOCollection.exe
+      shell: cmd
+
+    - name: Upload Executable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: YuGiOh-Manager-Windows
+        path: YGOCollection-Release\
