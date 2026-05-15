@@ -21,7 +21,6 @@
 #include <QJsonArray>
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
-#include <QRegularExpressionMatchIterator>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -77,7 +76,7 @@ private:
         // --- Top Row: Search ---
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
-        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., DREV-JP050)");
+        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., CORI-JP040)");
         cardNumberInput->setStyleSheet("padding: 5px;");
         
         searchBtn = new QPushButton("Search Yugipedia", this);
@@ -133,12 +132,11 @@ private:
         statusLabel->setText("Searching Yugipedia...");
         searchBtn->setEnabled(false);
         
-        // Yugipedia MediaWiki API endpoint to fetch page content using a set code redirect
+        // Back to action=query to fetch the raw Wikitext
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        // MediaWiki requires a User-Agent to avoid getting blocked
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.0 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.2 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -187,7 +185,6 @@ private slots:
 
         QString pageKey = pagesObj.keys().first();
         
-        // MediaWiki returns a page ID of "-1" if the requested title/redirect doesn't exist
         if (pageKey == "-1") {
             statusLabel->setText("Invalid card number. Not found on Yugipedia.");
             statusLabel->setStyleSheet("color: red;");
@@ -199,31 +196,38 @@ private slots:
         currentCardName = pageObj["title"].toString();
         currentCardNumber = cardNumberInput->text().trimmed().toUpper();
 
-        // Extract the Wikitext to find the rarity
+        // Extract the raw Wikitext
         QJsonArray revisions = pageObj["revisions"].toArray();
         QString wikitext = revisions[0].toObject()["slots"].toObject()["main"].toObject()["*"].toString();
 
         QStringList foundRarities;
         
-        // Regex to find standard Yu-Gi-Oh! rarities near the specific set code in the raw wikitext
-        QString prefix = currentCardNumber.section('-', 0, 0); // e.g., DREV
-        QString suffix = currentCardNumber.section('-', 1, 1); // e.g., JP050
-        QString pattern = QString("(?:%1[\\-\\|\\s]*%2)[^\\n]{0,40}?(Common|Rare|Super Rare|Ultra Rare|Secret Rare|Ultimate Rare|Ghost Rare|Holographic Rare|Prismatic Secret Rare|Gold Rare|Collector's Rare|Starlight Rare|Quarter Century Secret Rare)").arg(prefix, suffix);
+        // Match the exact format: [CardNumber]; [SetName]; [Rarities]
+        // E.g. "CORI-JP040; Chaos Origins; Super Rare, Secret Rare, Prismatic Secret Rare"
+        QString escapedNumber = QRegularExpression::escape(currentCardNumber);
+        QString pattern = QString("%1\\s*;[^;]*;\\s*([^\\n\\|]*)").arg(escapedNumber);
         
         QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
-        QRegularExpressionMatchIterator i = re.globalMatch(wikitext);
+        QRegularExpressionMatch match = re.match(wikitext);
         
-        while (i.hasNext()) {
-            QRegularExpressionMatch match = i.next();
-            QString rarity = match.captured(1).trimmed();
-            // Capitalize the first letter of each word to keep it clean
-            if (!foundRarities.contains(rarity, Qt::CaseInsensitive)) {
-                foundRarities.append(rarity);
+        if (match.hasMatch()) {
+            // captured(1) grabs everything after the second semicolon
+            QString raritiesStr = match.captured(1).trimmed(); 
+            
+            // If the string isn't empty, split it by commas
+            if (!raritiesStr.isEmpty()) {
+                QStringList splitRarities = raritiesStr.split(QRegularExpression("\\s*,\\s*"), Qt::SkipEmptyParts);
+                for (const QString& rarity : splitRarities) {
+                    if (!foundRarities.contains(rarity)) {
+                        foundRarities.append(rarity.trimmed());
+                    }
+                }
             }
         }
 
+        // Fallback for cards like CORI-SC040 where the rarity field is left blank in the wikitext
         if (foundRarities.isEmpty()) {
-            foundRarities.append("Common (Default)");
+            foundRarities.append("Common");
         }
 
         rarityCombo->clear();
