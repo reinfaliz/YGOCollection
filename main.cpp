@@ -20,7 +20,6 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QRegularExpression>
-#include <QRegularExpressionMatch>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -132,11 +131,10 @@ private:
         statusLabel->setText("Searching Yugipedia...");
         searchBtn->setEnabled(false);
         
-        // Back to action=query to fetch the raw Wikitext
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.2 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.3 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -202,34 +200,51 @@ private slots:
 
         QStringList foundRarities;
         
-        // Match the exact format: [CardNumber]; [SetName]; [Rarities]
-        // E.g. "CORI-JP040; Chaos Origins; Super Rare, Secret Rare, Prismatic Secret Rare"
-        QString escapedNumber = QRegularExpression::escape(currentCardNumber);
-        QString pattern = QString("%1\\s*;[^;]*;\\s*([^\\n\\|]*)").arg(escapedNumber);
+        // --- NEW LINE-BY-LINE PARSER ---
+        // Split the massive wikitext string into an array of individual lines
+        QStringList lines = wikitext.split(QRegularExpression("[\\r\\n]+"), Qt::SkipEmptyParts);
         
-        QRegularExpression re(pattern, QRegularExpression::CaseInsensitiveOption);
-        QRegularExpressionMatch match = re.match(wikitext);
-        
-        if (match.hasMatch()) {
-            // captured(1) grabs everything after the second semicolon
-            QString raritiesStr = match.captured(1).trimmed(); 
-            
-            // If the string isn't empty, split it by commas
-            if (!raritiesStr.isEmpty()) {
-                QStringList splitRarities = raritiesStr.split(QRegularExpression("\\s*,\\s*"), Qt::SkipEmptyParts);
-                for (const QString& rarity : splitRarities) {
-                    if (!foundRarities.contains(rarity)) {
-                        foundRarities.append(rarity.trimmed());
+        for (const QString& line : lines) {
+            // Find the specific line containing our card number (e.g., CORI-JP040)
+            if (line.contains(currentCardNumber, Qt::CaseInsensitive)) {
+                
+                // The standard format is: SetCode; SetName; Rarities
+                QStringList parts = line.split(';');
+                
+                if (parts.size() >= 3) {
+                    // Grab the rarities column
+                    QString raritiesStr = parts[2];
+                    
+                    // If a set name accidentally had a semicolon, grab the rest of the parts just in case
+                    for (int i = 3; i < parts.size(); ++i) {
+                        raritiesStr += "," + parts[i];
+                    }
+
+                    // Clean out wiki brackets [[ ]], HTML tags <br />, and comments raritiesStr.remove('[').remove(']');
+                    raritiesStr.remove(QRegularExpression("<[^>]*>"));
+                    raritiesStr.remove(QRegularExpression(""));
+                    
+                    // Split the cleaned string by comma or slash
+                    QStringList splitRarities = raritiesStr.split(QRegularExpression("[,/]"), Qt::SkipEmptyParts);
+                    
+                    for (QString rarity : splitRarities) {
+                        rarity = rarity.trimmed();
+                        // Add to our list if it isn't empty and isn't a duplicate
+                        if (!rarity.isEmpty() && !foundRarities.contains(rarity, Qt::CaseInsensitive)) {
+                            foundRarities.append(rarity);
+                        }
                     }
                 }
+                break; // We found the line, stop searching the wikitext
             }
         }
 
-        // Fallback for cards like CORI-SC040 where the rarity field is left blank in the wikitext
+        // Fallback for promo cards or sets where rarities are left entirely blank
         if (foundRarities.isEmpty()) {
             foundRarities.append("Common");
         }
 
+        // Update the UI
         rarityCombo->clear();
         rarityCombo->addItems(foundRarities);
         rarityCombo->setEnabled(foundRarities.size() > 1);
