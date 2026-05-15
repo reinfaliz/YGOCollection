@@ -20,6 +20,10 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QRegularExpression>
+#include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
+#include <QDir>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -42,6 +46,9 @@ private:
     QPushButton *addBtn;
     QLabel *statusLabel;
     QTableView *tableView;
+    
+    QPushButton *exportBtn;
+    QPushButton *importBtn;
     
     // Data Models
     QSqlTableModel *tableModel;
@@ -72,7 +79,14 @@ private:
     void setupUI() {
         QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-        // --- Top Row: Search ---
+        // --- Top Row: Import / Export ---
+        QHBoxLayout *ioLayout = new QHBoxLayout();
+        importBtn = new QPushButton("📥 Import from CSV", this);
+        exportBtn = new QPushButton("📤 Export to Excel (CSV)", this);
+        ioLayout->addWidget(importBtn);
+        ioLayout->addWidget(exportBtn);
+
+        // --- Second Row: Search ---
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
         cardNumberInput->setPlaceholderText("Enter Card Number (e.g., CORI-JP040)");
@@ -82,7 +96,7 @@ private:
         searchLayout->addWidget(cardNumberInput);
         searchLayout->addWidget(searchBtn);
         
-        // --- Middle Row: Input Data ---
+        // --- Third Row: Input Data ---
         QHBoxLayout *inputLayout = new QHBoxLayout();
         
         rarityCombo = new QComboBox(this);
@@ -115,13 +129,112 @@ private:
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         tableView->hideColumn(0); 
 
+        mainLayout->addLayout(ioLayout);
         mainLayout->addLayout(searchLayout);
         mainLayout->addWidget(statusLabel);
         mainLayout->addLayout(inputLayout);
         mainLayout->addWidget(tableView);
 
+        // Connect Buttons
         connect(searchBtn, &QPushButton::clicked, this, &YGOCollection::searchCard);
         connect(addBtn, &QPushButton::clicked, this, &YGOCollection::saveCardToDatabase);
+        connect(exportBtn, &QPushButton::clicked, this, &YGOCollection::exportToCsv);
+        connect(importBtn, &QPushButton::clicked, this, &YGOCollection::importFromCsv);
+    }
+
+    void exportToCsv() {
+        QString fileName = QFileDialog::getSaveFileName(this, "Export Collection", QDir::homePath(), "CSV Files (*.csv)");
+        if (fileName.isEmpty()) return;
+
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::critical(this, "Export Error", "Cannot write to file.");
+            return;
+        }
+
+        QTextStream out(&file);
+        // Write the header row
+        out << "Card Number,Card Name,Rarity,Quantity\n";
+
+        QSqlQuery query("SELECT card_number, card_name, rarity, quantity FROM collection");
+        int count = 0;
+        while (query.next()) {
+            QString num = query.value(0).toString();
+            QString name = query.value(1).toString();
+            
+            // If the card name has a comma in it, wrap the name in quotes so Excel doesn't split it
+            if (name.contains(",")) {
+                name = "\"" + name + "\"";
+            }
+            
+            QString rar = query.value(2).toString();
+            QString qty = query.value(3).toString();
+            
+            out << num << "," << name << "," << rar << "," << qty << "\n";
+            count++;
+        }
+        
+        file.close();
+        statusLabel->setText(QString("Successfully exported %1 cards to Excel.").arg(count));
+        statusLabel->setStyleSheet("color: green;");
+    }
+
+    void importFromCsv() {
+        QString fileName = QFileDialog::getOpenFileName(this, "Import Collection", QDir::homePath(), "CSV Files (*.csv)");
+        if (fileName.isEmpty()) return;
+
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QMessageBox::critical(this, "Import Error", "Cannot read file.");
+            return;
+        }
+
+        QTextStream in(&file);
+        QString header = in.readLine(); // Read and ignore the header line
+
+        QSqlDatabase::database().transaction(); // Start transaction for fast bulk insertion
+        QSqlQuery query;
+        query.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) VALUES (:num, :name, :rarity, :qty)");
+
+        int count = 0;
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            if (line.trimmed().isEmpty()) continue;
+
+            // Custom CSV Parser to handle commas inside quotes
+            QStringList fields;
+            QString currentField;
+            bool inQuotes = false;
+            
+            for (int i = 0; i < line.length(); ++i) {
+                QChar c = line[i];
+                if (c == '\"') {
+                    inQuotes = !inQuotes; // Toggle quote state
+                } else if (c == ',' && !inQuotes) {
+                    fields.append(currentField.trimmed());
+                    currentField.clear(); // Hit a real comma separator
+                } else {
+                    currentField += c; // Add character to current field
+                }
+            }
+            fields.append(currentField.trimmed()); // Append the final column
+
+            if (fields.size() >= 4) {
+                query.bindValue(":num", fields[0]);
+                query.bindValue(":name", fields[1]);
+                query.bindValue(":rarity", fields[2]);
+                query.bindValue(":qty", fields[3].toInt());
+                query.exec();
+                count++;
+            }
+        }
+
+        QSqlDatabase::database().commit(); // Commit all insertions at once
+        file.close();
+        
+        tableModel->select(); // Refresh the visual table
+        statusLabel->setText(QString("Successfully imported %1 cards.").arg(count));
+        statusLabel->setStyleSheet("color: green;");
     }
 
     void searchCard() {
@@ -135,7 +248,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.4 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.5 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -195,7 +308,6 @@ private slots:
         currentCardName = pageObj["title"].toString();
         currentCardNumber = cardNumberInput->text().trimmed().toUpper();
 
-        // 1. Safely extract the wikitext 
         QString wikitext;
         QJsonArray revisions = pageObj["revisions"].toArray();
         if (!revisions.isEmpty()) {
@@ -203,11 +315,10 @@ private slots:
             if (revObj.contains("slots")) {
                 wikitext = revObj["slots"].toObject()["main"].toObject()["*"].toString();
             } else {
-                wikitext = revObj["*"].toString(); // Fallback
+                wikitext = revObj["*"].toString(); 
             }
         }
 
-        // 2. Error Check: Did Qt successfully pull the text?
         if (wikitext.isEmpty()) {
             statusLabel->setText("Error: Wikitext missing from API response.");
             statusLabel->setStyleSheet("color: red;");
@@ -216,13 +327,9 @@ private slots:
         }
 
         QStringList foundRarities;
-        
-        // 3. Substring Parser (The Fix)
         int index = 0;
-        // Loop through EVERY occurrence of the card number in the wikitext
+        
         while ((index = wikitext.indexOf(currentCardNumber, index, Qt::CaseInsensitive)) != -1) {
-            
-            // Find the end of this specific line
             int endActual = wikitext.indexOf('\n', index);
             int endLiteral = wikitext.indexOf("\\n", index);
             int endIndex = -1;
@@ -232,23 +339,19 @@ private slots:
             else if (endLiteral != -1) endIndex = endLiteral;
             else endIndex = wikitext.length();
             
-            // Extract just the line containing the card number
             QString line = wikitext.mid(index, endIndex - index);
             
-            // Look for standard formatting: CORI-JP040; Chaos Origins; Rarities...
             QStringList parts = line.split(';');
             if (parts.size() >= 3) {
                 QString raritiesStr = parts[2];
-                // Append any extra parts in case the set name had a semicolon in it
                 for (int i = 3; i < parts.size(); ++i) {
                     raritiesStr += "," + parts[i]; 
                 }
 
-                // Clean out wiki brackets [[ ]], HTML tags <br />, and comments raritiesStr.remove('[').remove(']');
+                raritiesStr.remove('[').remove(']');
                 raritiesStr.remove(QRegularExpression("<[^>]*>"));
                 raritiesStr.remove(QRegularExpression(""));
                 
-                // Split the cleaned string by comma or slash
                 QStringList splitRarities = raritiesStr.split(QRegularExpression("[,/]"), Qt::SkipEmptyParts);
                 
                 for (QString rarity : splitRarities) {
@@ -258,17 +361,13 @@ private slots:
                     }
                 }
                 
-                // If we successfully found rarities, break the loop completely
                 if (!foundRarities.isEmpty()) {
                     break; 
                 }
             }
-            
-            // If the line didn't have semicolons (e.g. it was an image file link), move to the next occurrence
             index = endIndex; 
         }
 
-        // 4. Update UI
         if (foundRarities.isEmpty()) {
             foundRarities.append("Common");
             statusLabel->setText("Card found: " + currentCardName + " (Rarities not found in text)");
@@ -294,7 +393,7 @@ int main(int argc, char *argv[]) {
     
     YGOCollection window;
     window.setWindowTitle("Yu-Gi-Oh! Collection Manager");
-    window.resize(600, 400);
+    window.resize(600, 450);
     window.show();
     
     return app.exec();
