@@ -125,9 +125,21 @@ private:
         tableModel->select();
         tableModel->setEditStrategy(QSqlTableModel::OnFieldChange); 
         
+        // Custom Table Headers (Feature 2)
+        tableModel->setHeaderData(1, Qt::Horizontal, "Card Number");
+        tableModel->setHeaderData(2, Qt::Horizontal, "Card Name");
+        tableModel->setHeaderData(3, Qt::Horizontal, "Rarity");
+        tableModel->setHeaderData(4, Qt::Horizontal, "Quantity");
+        
         tableView->setModel(tableModel);
-        tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-        tableView->hideColumn(0); 
+        
+        // Draggable, Resizable Columns (Feature 3)
+        tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+        tableView->horizontalHeader()->setStretchLastSection(true); // Fills remaining space gracefully
+        tableView->setColumnWidth(1, 100); // Default width for Card Number
+        tableView->setColumnWidth(2, 200); // Default width for Card Name
+        
+        tableView->hideColumn(0); // Hide the database ID
 
         mainLayout->addLayout(ioLayout);
         mainLayout->addLayout(searchLayout);
@@ -135,7 +147,8 @@ private:
         mainLayout->addLayout(inputLayout);
         mainLayout->addWidget(tableView);
 
-        // Connect Buttons
+        // Connect Buttons & Enter Key (Feature 1)
+        connect(cardNumberInput, &QLineEdit::returnPressed, this, &YGOCollection::searchCard);
         connect(searchBtn, &QPushButton::clicked, this, &YGOCollection::searchCard);
         connect(addBtn, &QPushButton::clicked, this, &YGOCollection::saveCardToDatabase);
         connect(exportBtn, &QPushButton::clicked, this, &YGOCollection::exportToCsv);
@@ -162,7 +175,6 @@ private:
             QString num = query.value(0).toString();
             QString name = query.value(1).toString();
             
-            // If the card name has a comma in it, wrap the name in quotes so Excel doesn't split it
             if (name.contains(",")) {
                 name = "\"" + name + "\"";
             }
@@ -192,7 +204,7 @@ private:
         QTextStream in(&file);
         QString header = in.readLine(); // Read and ignore the header line
 
-        QSqlDatabase::database().transaction(); // Start transaction for fast bulk insertion
+        QSqlDatabase::database().transaction(); 
         QSqlQuery query;
         query.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) VALUES (:num, :name, :rarity, :qty)");
 
@@ -201,7 +213,6 @@ private:
             QString line = in.readLine();
             if (line.trimmed().isEmpty()) continue;
 
-            // Custom CSV Parser to handle commas inside quotes
             QStringList fields;
             QString currentField;
             bool inQuotes = false;
@@ -209,15 +220,15 @@ private:
             for (int i = 0; i < line.length(); ++i) {
                 QChar c = line[i];
                 if (c == '\"') {
-                    inQuotes = !inQuotes; // Toggle quote state
+                    inQuotes = !inQuotes; 
                 } else if (c == ',' && !inQuotes) {
                     fields.append(currentField.trimmed());
-                    currentField.clear(); // Hit a real comma separator
+                    currentField.clear(); 
                 } else {
-                    currentField += c; // Add character to current field
+                    currentField += c; 
                 }
             }
-            fields.append(currentField.trimmed()); // Append the final column
+            fields.append(currentField.trimmed());
 
             if (fields.size() >= 4) {
                 query.bindValue(":num", fields[0]);
@@ -229,10 +240,10 @@ private:
             }
         }
 
-        QSqlDatabase::database().commit(); // Commit all insertions at once
+        QSqlDatabase::database().commit(); 
         file.close();
         
-        tableModel->select(); // Refresh the visual table
+        tableModel->select(); 
         statusLabel->setText(QString("Successfully imported %1 cards.").arg(count));
         statusLabel->setStyleSheet("color: green;");
     }
@@ -248,24 +259,57 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.5 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.6 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
 
     void saveCardToDatabase() {
-        QSqlQuery query;
-        query.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) "
-                      "VALUES (:number, :name, :rarity, :qty)");
-        query.bindValue(":number", currentCardNumber);
-        query.bindValue(":name", currentCardName);
-        query.bindValue(":rarity", rarityCombo->currentText());
-        query.bindValue(":qty", quantitySpinBox->value());
+        QString inputRarity = rarityCombo->currentText();
+        int inputQty = quantitySpinBox->value();
 
-        if (query.exec()) {
-            statusLabel->setText("Card added successfully!");
+        // Check if the exact card + rarity already exists in the collection (Feature 4)
+        QSqlQuery checkQuery;
+        checkQuery.prepare("SELECT id, quantity FROM collection WHERE card_number = :num AND rarity = :rarity");
+        checkQuery.bindValue(":num", currentCardNumber);
+        checkQuery.bindValue(":rarity", inputRarity);
+        checkQuery.exec();
+
+        bool success = false;
+
+        if (checkQuery.next()) {
+            // Found a duplicate: UPDATE the existing quantity
+            int existingId = checkQuery.value(0).toInt();
+            int newQty = checkQuery.value(1).toInt() + inputQty;
+
+            QSqlQuery updateQuery;
+            updateQuery.prepare("UPDATE collection SET quantity = :qty WHERE id = :id");
+            updateQuery.bindValue(":qty", newQty);
+            updateQuery.bindValue(":id", existingId);
+            success = updateQuery.exec();
+            
+            if (success) {
+                statusLabel->setText(QString("Added +%1 to existing stack. Total: %2").arg(inputQty).arg(newQty));
+            }
+        } else {
+            // No duplicate found: INSERT a new row
+            QSqlQuery insertQuery;
+            insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) "
+                                "VALUES (:number, :name, :rarity, :qty)");
+            insertQuery.bindValue(":number", currentCardNumber);
+            insertQuery.bindValue(":name", currentCardName);
+            insertQuery.bindValue(":rarity", inputRarity);
+            insertQuery.bindValue(":qty", inputQty);
+            success = insertQuery.exec();
+            
+            if (success) {
+                statusLabel->setText("New card added successfully!");
+            }
+        }
+
+        if (success) {
             statusLabel->setStyleSheet("color: green;");
-            tableModel->select(); 
+            tableModel->select(); // Refresh visual table
             
             cardNumberInput->clear();
             rarityCombo->clear();
@@ -273,8 +317,10 @@ private:
             quantitySpinBox->setValue(1);
             quantitySpinBox->setEnabled(false);
             addBtn->setEnabled(false);
+            
+            cardNumberInput->setFocus(); // Put the cursor back in the search box for fast scanning!
         } else {
-            QMessageBox::critical(this, "Save Error", "Could not save to database.");
+            QMessageBox::critical(this, "Database Error", "Could not save card to collection.");
         }
     }
 
@@ -393,7 +439,7 @@ int main(int argc, char *argv[]) {
     
     YGOCollection window;
     window.setWindowTitle("Yu-Gi-Oh! Collection Manager");
-    window.resize(600, 450);
+    window.resize(650, 500);
     window.show();
     
     return app.exec();
