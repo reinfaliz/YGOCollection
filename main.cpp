@@ -51,7 +51,7 @@ private:
     
     QPushButton *exportBtn;
     QPushButton *importBtn;
-    QPushButton *deleteBtn; // New Delete Button
+    QPushButton *deleteBtn; 
     
     // Data Models
     QSqlTableModel *tableModel;
@@ -135,6 +135,10 @@ private:
         
         tableView->setModel(tableModel);
         
+        // Visual Improvements for Deletion
+        tableView->setSelectionBehavior(QAbstractItemView::SelectRows); // Select entire row, not just a cell
+        tableView->setSelectionMode(QAbstractItemView::ExtendedSelection); // Allow Shift/Ctrl clicking
+        
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         tableView->horizontalHeader()->setStretchLastSection(true); 
         tableView->setColumnWidth(1, 100); 
@@ -146,7 +150,7 @@ private:
         QHBoxLayout *tableActionsLayout = new QHBoxLayout();
         deleteBtn = new QPushButton("❌ Delete Selected", this);
         deleteBtn->setStyleSheet("color: #d9534f; font-weight: bold; padding: 5px;");
-        tableActionsLayout->addStretch(); // Pushes the button to the right side
+        tableActionsLayout->addStretch(); 
         tableActionsLayout->addWidget(deleteBtn);
 
         // Build Main Layout
@@ -155,7 +159,7 @@ private:
         mainLayout->addWidget(statusLabel);
         mainLayout->addLayout(inputLayout);
         mainLayout->addWidget(tableView);
-        mainLayout->addLayout(tableActionsLayout); // Add delete button under table
+        mainLayout->addLayout(tableActionsLayout); 
 
         // Connect Buttons & Enter Key 
         connect(cardNumberInput, &QLineEdit::returnPressed, this, &YGOCollection::searchCard);
@@ -169,45 +173,66 @@ private:
 
         // Setup Delete Shortcut Key
         QShortcut *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), tableView);
-        // WidgetShortcut ensures it ONLY fires if the table itself is currently selected/focused
         deleteShortcut->setContext(Qt::WidgetShortcut);
         connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
     }
 
     void deleteSelectedCard() {
-        // Find which row the user is currently clicking on
-        QModelIndex currentIndex = tableView->currentIndex();
-        if (!currentIndex.isValid()) {
-            QMessageBox::information(this, "No Selection", "Please select a card from the table first.");
+        // Fetch all currently highlighted rows
+        QModelIndexList selectedRows = tableView->selectionModel()->selectedRows();
+
+        if (selectedRows.isEmpty()) {
+            QMessageBox::information(this, "No Selection", "Please select at least one card from the table first.");
             return;
         }
 
-        int row = currentIndex.row();
+        int count = selectedRows.size();
+        QString confirmationMessage;
 
-        // Extract the hidden ID, Card Name, and Rarity from the model
-        int cardId = tableModel->data(tableModel->index(row, 0)).toInt();
-        QString cardNum = tableModel->data(tableModel->index(row, 1)).toString();
-        QString cardName = tableModel->data(tableModel->index(row, 2)).toString();
-        QString rarity = tableModel->data(tableModel->index(row, 3)).toString();
+        // Dynamic confirmation message depending on how many rows are selected
+        if (count == 1) {
+            int row = selectedRows.first().row();
+            QString cardNum = tableModel->data(tableModel->index(row, 1)).toString();
+            QString cardName = tableModel->data(tableModel->index(row, 2)).toString();
+            QString rarity = tableModel->data(tableModel->index(row, 3)).toString();
+            confirmationMessage = QString("Are you sure you want to completely remove '%1 - %2 (%3)' from your collection?")
+                                  .arg(cardNum, cardName, rarity);
+        } else {
+            confirmationMessage = QString("Are you sure you want to completely remove %1 selected cards from your collection?").arg(count);
+        }
 
-        // Ask for confirmation
         QMessageBox::StandardButton reply;
-        reply = QMessageBox::question(this, "Confirm Deletion",
-                                      QString("Are you sure you want to completely remove '%1 - %2 (%3)' from your collection?")
-                                      .arg(cardNum, cardName, rarity),
-                                      QMessageBox::Yes | QMessageBox::No);
+        reply = QMessageBox::question(this, "Confirm Deletion", confirmationMessage, QMessageBox::Yes | QMessageBox::No);
 
         if (reply == QMessageBox::Yes) {
+            // Start an SQL Transaction so deleting multiple rows is fast and safe
+            QSqlDatabase::database().transaction();
             QSqlQuery query;
             query.prepare("DELETE FROM collection WHERE id = :id");
-            query.bindValue(":id", cardId);
+
+            int deletedCount = 0;
             
-            if (query.exec()) {
-                statusLabel->setText(QString("Deleted: %1").arg(cardName));
-                statusLabel->setStyleSheet("color: #d9534f;"); // Red text to indicate deletion
+            // Loop through every selected row and delete it by its Database ID
+            for (const QModelIndex &index : selectedRows) {
+                int cardId = tableModel->data(tableModel->index(index.row(), 0)).toInt();
+                query.bindValue(":id", cardId);
+                if (query.exec()) {
+                    deletedCount++;
+                }
+            }
+
+            QSqlDatabase::database().commit();
+
+            if (deletedCount > 0) {
+                if (count == 1) {
+                    statusLabel->setText("Deleted 1 card.");
+                } else {
+                    statusLabel->setText(QString("Deleted %1 cards.").arg(deletedCount));
+                }
+                statusLabel->setStyleSheet("color: #d9534f;");
                 tableModel->select(); // Refresh visual table
             } else {
-                QMessageBox::critical(this, "Database Error", "Failed to delete the card.");
+                QMessageBox::critical(this, "Database Error", "Failed to delete the cards.");
             }
         }
     }
@@ -315,7 +340,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.7 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.8 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
