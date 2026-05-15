@@ -24,6 +24,8 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDir>
+#include <QShortcut>
+#include <QKeySequence>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -49,6 +51,7 @@ private:
     
     QPushButton *exportBtn;
     QPushButton *importBtn;
+    QPushButton *deleteBtn; // New Delete Button
     
     // Data Models
     QSqlTableModel *tableModel;
@@ -125,7 +128,6 @@ private:
         tableModel->select();
         tableModel->setEditStrategy(QSqlTableModel::OnFieldChange); 
         
-        // Custom Table Headers (Feature 2)
         tableModel->setHeaderData(1, Qt::Horizontal, "Card Number");
         tableModel->setHeaderData(2, Qt::Horizontal, "Card Name");
         tableModel->setHeaderData(3, Qt::Horizontal, "Rarity");
@@ -133,26 +135,81 @@ private:
         
         tableView->setModel(tableModel);
         
-        // Draggable, Resizable Columns (Feature 3)
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-        tableView->horizontalHeader()->setStretchLastSection(true); // Fills remaining space gracefully
-        tableView->setColumnWidth(1, 100); // Default width for Card Number
-        tableView->setColumnWidth(2, 200); // Default width for Card Name
+        tableView->horizontalHeader()->setStretchLastSection(true); 
+        tableView->setColumnWidth(1, 100); 
+        tableView->setColumnWidth(2, 200); 
         
-        tableView->hideColumn(0); // Hide the database ID
+        tableView->hideColumn(0); 
 
+        // --- New Row: Table Actions ---
+        QHBoxLayout *tableActionsLayout = new QHBoxLayout();
+        deleteBtn = new QPushButton("❌ Delete Selected", this);
+        deleteBtn->setStyleSheet("color: #d9534f; font-weight: bold; padding: 5px;");
+        tableActionsLayout->addStretch(); // Pushes the button to the right side
+        tableActionsLayout->addWidget(deleteBtn);
+
+        // Build Main Layout
         mainLayout->addLayout(ioLayout);
         mainLayout->addLayout(searchLayout);
         mainLayout->addWidget(statusLabel);
         mainLayout->addLayout(inputLayout);
         mainLayout->addWidget(tableView);
+        mainLayout->addLayout(tableActionsLayout); // Add delete button under table
 
-        // Connect Buttons & Enter Key (Feature 1)
+        // Connect Buttons & Enter Key 
         connect(cardNumberInput, &QLineEdit::returnPressed, this, &YGOCollection::searchCard);
         connect(searchBtn, &QPushButton::clicked, this, &YGOCollection::searchCard);
         connect(addBtn, &QPushButton::clicked, this, &YGOCollection::saveCardToDatabase);
         connect(exportBtn, &QPushButton::clicked, this, &YGOCollection::exportToCsv);
         connect(importBtn, &QPushButton::clicked, this, &YGOCollection::importFromCsv);
+        
+        // Connect Delete Button
+        connect(deleteBtn, &QPushButton::clicked, this, &YGOCollection::deleteSelectedCard);
+
+        // Setup Delete Shortcut Key
+        QShortcut *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), tableView);
+        // WidgetShortcut ensures it ONLY fires if the table itself is currently selected/focused
+        deleteShortcut->setContext(Qt::WidgetShortcut);
+        connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
+    }
+
+    void deleteSelectedCard() {
+        // Find which row the user is currently clicking on
+        QModelIndex currentIndex = tableView->currentIndex();
+        if (!currentIndex.isValid()) {
+            QMessageBox::information(this, "No Selection", "Please select a card from the table first.");
+            return;
+        }
+
+        int row = currentIndex.row();
+
+        // Extract the hidden ID, Card Name, and Rarity from the model
+        int cardId = tableModel->data(tableModel->index(row, 0)).toInt();
+        QString cardNum = tableModel->data(tableModel->index(row, 1)).toString();
+        QString cardName = tableModel->data(tableModel->index(row, 2)).toString();
+        QString rarity = tableModel->data(tableModel->index(row, 3)).toString();
+
+        // Ask for confirmation
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "Confirm Deletion",
+                                      QString("Are you sure you want to completely remove '%1 - %2 (%3)' from your collection?")
+                                      .arg(cardNum, cardName, rarity),
+                                      QMessageBox::Yes | QMessageBox::No);
+
+        if (reply == QMessageBox::Yes) {
+            QSqlQuery query;
+            query.prepare("DELETE FROM collection WHERE id = :id");
+            query.bindValue(":id", cardId);
+            
+            if (query.exec()) {
+                statusLabel->setText(QString("Deleted: %1").arg(cardName));
+                statusLabel->setStyleSheet("color: #d9534f;"); // Red text to indicate deletion
+                tableModel->select(); // Refresh visual table
+            } else {
+                QMessageBox::critical(this, "Database Error", "Failed to delete the card.");
+            }
+        }
     }
 
     void exportToCsv() {
@@ -166,7 +223,6 @@ private:
         }
 
         QTextStream out(&file);
-        // Write the header row
         out << "Card Number,Card Name,Rarity,Quantity\n";
 
         QSqlQuery query("SELECT card_number, card_name, rarity, quantity FROM collection");
@@ -202,7 +258,7 @@ private:
         }
 
         QTextStream in(&file);
-        QString header = in.readLine(); // Read and ignore the header line
+        QString header = in.readLine(); 
 
         QSqlDatabase::database().transaction(); 
         QSqlQuery query;
@@ -259,7 +315,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.6 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.7 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -268,7 +324,6 @@ private:
         QString inputRarity = rarityCombo->currentText();
         int inputQty = quantitySpinBox->value();
 
-        // Check if the exact card + rarity already exists in the collection (Feature 4)
         QSqlQuery checkQuery;
         checkQuery.prepare("SELECT id, quantity FROM collection WHERE card_number = :num AND rarity = :rarity");
         checkQuery.bindValue(":num", currentCardNumber);
@@ -278,7 +333,6 @@ private:
         bool success = false;
 
         if (checkQuery.next()) {
-            // Found a duplicate: UPDATE the existing quantity
             int existingId = checkQuery.value(0).toInt();
             int newQty = checkQuery.value(1).toInt() + inputQty;
 
@@ -292,7 +346,6 @@ private:
                 statusLabel->setText(QString("Added +%1 to existing stack. Total: %2").arg(inputQty).arg(newQty));
             }
         } else {
-            // No duplicate found: INSERT a new row
             QSqlQuery insertQuery;
             insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) "
                                 "VALUES (:number, :name, :rarity, :qty)");
@@ -309,7 +362,7 @@ private:
 
         if (success) {
             statusLabel->setStyleSheet("color: green;");
-            tableModel->select(); // Refresh visual table
+            tableModel->select(); 
             
             cardNumberInput->clear();
             rarityCombo->clear();
@@ -318,7 +371,7 @@ private:
             quantitySpinBox->setEnabled(false);
             addBtn->setEnabled(false);
             
-            cardNumberInput->setFocus(); // Put the cursor back in the search box for fast scanning!
+            cardNumberInput->setFocus(); 
         } else {
             QMessageBox::critical(this, "Database Error", "Could not save card to collection.");
         }
