@@ -27,6 +27,8 @@
 #include <QShortcut>
 #include <QKeySequence>
 #include <QKeyEvent> 
+#include <QTimer>
+#include <QDateTime>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -47,7 +49,7 @@ protected:
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
                 if (obj == rarityCombo) {
                     quantitySpinBox->setFocus(); 
-                    quantitySpinBox->selectAll(); // <--- NEW: Automatically highlight the number
+                    quantitySpinBox->selectAll(); 
                     return true; 
                 } else if (obj == quantitySpinBox) {
                     saveCardToDatabase(); 
@@ -75,6 +77,10 @@ private:
     // Data Models
     QSqlTableModel *tableModel;
     QNetworkAccessManager *networkManager;
+    
+    // API Safety Variables
+    qint64 lastApiCallTime = 0;
+    QString pendingSearchCardNumber;
     
     // Temporary storage
     QString currentCardName;
@@ -341,18 +347,47 @@ private:
         statusLabel->setStyleSheet("color: green;");
     }
 
+    // --- NEW: Cooldown Logic ---
     void searchCard() {
-        QString input = cardNumberInput->text().trimmed().toUpper();
-        if (input.isEmpty()) return;
+        if (!searchBtn->isEnabled()) return; // Prevent double firing from Enter key
 
+        pendingSearchCardNumber = cardNumberInput->text().trimmed().toUpper();
+        if (pendingSearchCardNumber.isEmpty()) return;
+
+        searchBtn->setEnabled(false);
+
+        qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        qint64 timeElapsed = currentTime - lastApiCallTime;
+
+        if (timeElapsed < 1000) {
+            // Under 1 second: Queue the request and tell the user
+            int delayRemaining = 1000 - timeElapsed;
+            statusLabel->setText(QString("API Cooldown: Waiting %1 ms...").arg(delayRemaining));
+            statusLabel->setStyleSheet("color: orange;");
+            
+            QTimer::singleShot(delayRemaining, this, &YGOCollection::executeApiRequest);
+        } else {
+            // Over 1 second: Execute instantly
+            executeApiRequest();
+        }
+    }
+
+    // --- NEW: Extracted Execution Logic ---
+    void executeApiRequest() {
+        lastApiCallTime = QDateTime::currentMSecsSinceEpoch();
+        
         statusLabel->setText("Searching Yugipedia...");
         statusLabel->setStyleSheet("color: blue;");
-        searchBtn->setEnabled(false);
         
-        QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
+        // Added &maxlag=5 to the API string
+        QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + pendingSearchCardNumber + "&maxlag=5";
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.9 (Contact: user@example.com)");
+        
+        // Feature 1: User-Agent Identity
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.0 (Contact: user@example.com)");
+        // Feature 2: Request GZIP Compression to save bandwidth
+        request.setRawHeader("Accept-Encoding", "gzip, deflate");
         
         networkManager->get(request);
     }
@@ -428,6 +463,18 @@ private slots:
         QByteArray response = reply->readAll();
         QJsonDocument jsonDoc = QJsonDocument::fromJson(response);
         QJsonObject rootObj = jsonDoc.object();
+        
+        // --- NEW: Feature 3 (Maxlag Error Catching) ---
+        if (rootObj.contains("error")) {
+            QJsonObject errorObj = rootObj["error"].toObject();
+            if (errorObj["code"].toString() == "maxlag") {
+                statusLabel->setText("Yugipedia servers are busy (maxlag). Please wait a moment.");
+                statusLabel->setStyleSheet("color: red;");
+                reply->deleteLater();
+                return;
+            }
+        }
+        
         QJsonObject queryObj = rootObj["query"].toObject();
         QJsonObject pagesObj = queryObj["pages"].toObject();
 
@@ -443,7 +490,7 @@ private slots:
 
         QJsonObject pageObj = pagesObj[pageKey].toObject();
         currentCardName = pageObj["title"].toString();
-        currentCardNumber = cardNumberInput->text().trimmed().toUpper();
+        currentCardNumber = pendingSearchCardNumber; // Use the stored valid string
 
         QString wikitext;
         QJsonArray revisions = pageObj["revisions"].toArray();
@@ -522,12 +569,11 @@ private slots:
         quantitySpinBox->setEnabled(true);
         addBtn->setEnabled(true);
         
-        // --- Smart Focus Logic ---
         if (hasMultipleRarities) {
             rarityCombo->setFocus(); 
         } else {
             quantitySpinBox->setFocus(); 
-            quantitySpinBox->selectAll(); // <--- NEW: Automatically highlight the number
+            quantitySpinBox->selectAll(); 
         }
         
         reply->deleteLater();
