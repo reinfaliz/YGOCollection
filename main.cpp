@@ -26,7 +26,7 @@
 #include <QDir>
 #include <QShortcut>
 #include <QKeySequence>
-#include <QKeyEvent> // Added for Keyboard Event Filtering
+#include <QKeyEvent> 
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -41,16 +41,16 @@ public:
     }
 
 protected:
-    // This Event Filter listens for the ENTER key on specific widgets
     bool eventFilter(QObject *obj, QEvent *event) override {
         if (event->type() == QEvent::KeyPress) {
             QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
                 if (obj == rarityCombo) {
-                    quantitySpinBox->setFocus(); // Move selector to quantity
+                    quantitySpinBox->setFocus(); 
+                    quantitySpinBox->selectAll(); // <--- NEW: Automatically highlight the number
                     return true; 
                 } else if (obj == quantitySpinBox) {
-                    saveCardToDatabase(); // Trigger the save action
+                    saveCardToDatabase(); 
                     return true; 
                 }
             }
@@ -123,12 +123,12 @@ private:
         
         rarityCombo = new QComboBox(this);
         rarityCombo->setEnabled(false); 
-        rarityCombo->installEventFilter(this); // Install the keyboard listener
+        rarityCombo->installEventFilter(this); 
         
         quantitySpinBox = new QSpinBox(this);
         quantitySpinBox->setMinimum(1); 
         quantitySpinBox->setEnabled(false);
-        quantitySpinBox->installEventFilter(this); // Install the keyboard listener
+        quantitySpinBox->installEventFilter(this); 
         
         addBtn = new QPushButton("Add to Collection", this);
         addBtn->setEnabled(false);
@@ -408,7 +408,7 @@ private:
             quantitySpinBox->setEnabled(false);
             addBtn->setEnabled(false);
             
-            cardNumberInput->setFocus(); // Ensure focus returns to the start
+            cardNumberInput->setFocus(); 
         } else {
             QMessageBox::critical(this, "Database Error", "Could not save card to collection.");
         }
@@ -436,7 +436,7 @@ private slots:
         if (pageKey == "-1") {
             statusLabel->setText("Invalid card number. Not found on Yugipedia.");
             statusLabel->setStyleSheet("color: red;");
-            cardNumberInput->selectAll(); // Highlight the bad text so it's easy to overtype
+            cardNumberInput->selectAll(); 
             reply->deleteLater();
             return;
         }
@@ -524,9 +524,10 @@ private slots:
         
         // --- Smart Focus Logic ---
         if (hasMultipleRarities) {
-            rarityCombo->setFocus(); // Give selector to rarity box if they need to choose
+            rarityCombo->setFocus(); 
         } else {
-            quantitySpinBox->setFocus(); // Skip straight to quantity box if there is only 1 choice
+            quantitySpinBox->setFocus(); 
+            quantitySpinBox->selectAll(); // <--- NEW: Automatically highlight the number
         }
         
         reply->deleteLater();
