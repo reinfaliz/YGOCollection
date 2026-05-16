@@ -26,6 +26,7 @@
 #include <QDir>
 #include <QShortcut>
 #include <QKeySequence>
+#include <QKeyEvent> // Added for Keyboard Event Filtering
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -37,6 +38,24 @@ public:
         
         networkManager = new QNetworkAccessManager(this);
         connect(networkManager, &QNetworkAccessManager::finished, this, &YGOCollection::onApiReply);
+    }
+
+protected:
+    // This Event Filter listens for the ENTER key on specific widgets
+    bool eventFilter(QObject *obj, QEvent *event) override {
+        if (event->type() == QEvent::KeyPress) {
+            QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+                if (obj == rarityCombo) {
+                    quantitySpinBox->setFocus(); // Move selector to quantity
+                    return true; 
+                } else if (obj == quantitySpinBox) {
+                    saveCardToDatabase(); // Trigger the save action
+                    return true; 
+                }
+            }
+        }
+        return QWidget::eventFilter(obj, event);
     }
 
 private:
@@ -104,10 +123,12 @@ private:
         
         rarityCombo = new QComboBox(this);
         rarityCombo->setEnabled(false); 
+        rarityCombo->installEventFilter(this); // Install the keyboard listener
         
         quantitySpinBox = new QSpinBox(this);
         quantitySpinBox->setMinimum(1); 
         quantitySpinBox->setEnabled(false);
+        quantitySpinBox->installEventFilter(this); // Install the keyboard listener
         
         addBtn = new QPushButton("Add to Collection", this);
         addBtn->setEnabled(false);
@@ -135,9 +156,8 @@ private:
         
         tableView->setModel(tableModel);
         
-        // Visual Improvements for Deletion
-        tableView->setSelectionBehavior(QAbstractItemView::SelectRows); // Select entire row, not just a cell
-        tableView->setSelectionMode(QAbstractItemView::ExtendedSelection); // Allow Shift/Ctrl clicking
+        tableView->setSelectionBehavior(QAbstractItemView::SelectRows); 
+        tableView->setSelectionMode(QAbstractItemView::ExtendedSelection); 
         
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         tableView->horizontalHeader()->setStretchLastSection(true); 
@@ -167,18 +187,14 @@ private:
         connect(addBtn, &QPushButton::clicked, this, &YGOCollection::saveCardToDatabase);
         connect(exportBtn, &QPushButton::clicked, this, &YGOCollection::exportToCsv);
         connect(importBtn, &QPushButton::clicked, this, &YGOCollection::importFromCsv);
-        
-        // Connect Delete Button
         connect(deleteBtn, &QPushButton::clicked, this, &YGOCollection::deleteSelectedCard);
 
-        // Setup Delete Shortcut Key
         QShortcut *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), tableView);
         deleteShortcut->setContext(Qt::WidgetShortcut);
         connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
     }
 
     void deleteSelectedCard() {
-        // Fetch all currently highlighted rows
         QModelIndexList selectedRows = tableView->selectionModel()->selectedRows();
 
         if (selectedRows.isEmpty()) {
@@ -189,7 +205,6 @@ private:
         int count = selectedRows.size();
         QString confirmationMessage;
 
-        // Dynamic confirmation message depending on how many rows are selected
         if (count == 1) {
             int row = selectedRows.first().row();
             QString cardNum = tableModel->data(tableModel->index(row, 1)).toString();
@@ -205,14 +220,11 @@ private:
         reply = QMessageBox::question(this, "Confirm Deletion", confirmationMessage, QMessageBox::Yes | QMessageBox::No);
 
         if (reply == QMessageBox::Yes) {
-            // Start an SQL Transaction so deleting multiple rows is fast and safe
             QSqlDatabase::database().transaction();
             QSqlQuery query;
             query.prepare("DELETE FROM collection WHERE id = :id");
 
             int deletedCount = 0;
-            
-            // Loop through every selected row and delete it by its Database ID
             for (const QModelIndex &index : selectedRows) {
                 int cardId = tableModel->data(tableModel->index(index.row(), 0)).toInt();
                 query.bindValue(":id", cardId);
@@ -230,7 +242,7 @@ private:
                     statusLabel->setText(QString("Deleted %1 cards.").arg(deletedCount));
                 }
                 statusLabel->setStyleSheet("color: #d9534f;");
-                tableModel->select(); // Refresh visual table
+                tableModel->select(); 
             } else {
                 QMessageBox::critical(this, "Database Error", "Failed to delete the cards.");
             }
@@ -340,7 +352,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=" + input;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.8 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/1.9 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -396,7 +408,7 @@ private:
             quantitySpinBox->setEnabled(false);
             addBtn->setEnabled(false);
             
-            cardNumberInput->setFocus(); 
+            cardNumberInput->setFocus(); // Ensure focus returns to the start
         } else {
             QMessageBox::critical(this, "Database Error", "Could not save card to collection.");
         }
@@ -424,6 +436,7 @@ private slots:
         if (pageKey == "-1") {
             statusLabel->setText("Invalid card number. Not found on Yugipedia.");
             statusLabel->setStyleSheet("color: red;");
+            cardNumberInput->selectAll(); // Highlight the bad text so it's easy to overtype
             reply->deleteLater();
             return;
         }
@@ -503,10 +516,18 @@ private slots:
 
         rarityCombo->clear();
         rarityCombo->addItems(foundRarities);
-        rarityCombo->setEnabled(foundRarities.size() > 1);
-
+        
+        bool hasMultipleRarities = foundRarities.size() > 1;
+        rarityCombo->setEnabled(hasMultipleRarities);
         quantitySpinBox->setEnabled(true);
         addBtn->setEnabled(true);
+        
+        // --- Smart Focus Logic ---
+        if (hasMultipleRarities) {
+            rarityCombo->setFocus(); // Give selector to rarity box if they need to choose
+        } else {
+            quantitySpinBox->setFocus(); // Skip straight to quantity box if there is only 1 choice
+        }
         
         reply->deleteLater();
     }
