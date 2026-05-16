@@ -384,10 +384,8 @@ private:
         
         QNetworkRequest request((QUrl(apiUrl)));
         
-        // Feature 1: User-Agent Identity
+        // User-Agent Identity
         request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.0 (Contact: user@example.com)");
-        // Feature 2: Request GZIP Compression to save bandwidth
-        request.setRawHeader("Accept-Encoding", "gzip, deflate");
         
         networkManager->get(request);
     }
@@ -478,7 +476,16 @@ private slots:
         QJsonObject queryObj = rootObj["query"].toObject();
         QJsonObject pagesObj = queryObj["pages"].toObject();
 
-        QString pageKey = pagesObj.keys().first();
+        // --- NEW: Safety check to prevent crashing on empty data ---
+        QStringList pageKeys = pagesObj.keys();
+        if (pageKeys.isEmpty()) {
+            statusLabel->setText("Error: Unexpected or empty response from API.");
+            statusLabel->setStyleSheet("color: red;");
+            reply->deleteLater();
+            return;
+        }
+        
+        QString pageKey = pageKeys.first();
         
         if (pageKey == "-1") {
             statusLabel->setText("Invalid card number. Not found on Yugipedia.");
