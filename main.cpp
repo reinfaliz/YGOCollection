@@ -385,7 +385,7 @@ private:
         QNetworkRequest request((QUrl(apiUrl)));
         
         // User-Agent Identity
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.0 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YGOCollection (Contact: slash25@windowslive.com)");
         
         networkManager->get(request);
     }
@@ -591,7 +591,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     
     YGOCollection window;
-    window.setWindowTitle("Yu-Gi-Oh! Collection Manager");
+    window.setWindowTitle("YGO Collection");
     window.resize(650, 500);
     window.show();
     
