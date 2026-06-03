@@ -373,7 +373,7 @@ private:
         }
         
         file.close();
-        statusLabel->setText(QString("Successfully exported %1 cards to Excel.").arg(count));
+        statusLabel->setText(QString("Successfully exported %1 cards to CSV.").arg(count));
         statusLabel->setStyleSheet("color: green;");
     }
 
@@ -392,7 +392,6 @@ private:
 
         QSqlDatabase::database().transaction(); 
         
-        // Prepare three separate queries for the duplication check
         QSqlQuery checkQuery;
         checkQuery.prepare("SELECT id, quantity FROM collection WHERE card_number = :num AND rarity = :rarity");
 
@@ -432,13 +431,11 @@ private:
                 int csvQty = fields[3].toInt();
                 int csvOfficial = fields[4].toInt();
                 
-                // Run the duplicate check
                 checkQuery.bindValue(":num", csvNum);
                 checkQuery.bindValue(":rarity", csvRarity);
                 checkQuery.exec();
                 
                 if (checkQuery.next()) {
-                    // Update existing row
                     int existingId = checkQuery.value(0).toInt();
                     int newQty = checkQuery.value(1).toInt() + csvQty;
 
@@ -448,7 +445,6 @@ private:
                     updateQuery.bindValue(":id", existingId);
                     updateQuery.exec();
                 } else {
-                    // Insert brand new row
                     insertQuery.bindValue(":num", csvNum);
                     insertQuery.bindValue(":name", csvName);
                     insertQuery.bindValue(":rarity", csvRarity);
@@ -473,6 +469,17 @@ private:
 
         pendingSearchCardNumber = cardNumberInput->text().trimmed().toUpper();
         if (pendingSearchCardNumber.isEmpty()) return;
+
+        // --- NEW: Regex Validation ---
+        QRegularExpression regex("^[A-Z0-9]{2,5}-[A-Z]{0,2}[0-9A-Z]{1,4}$");
+        QRegularExpressionMatch match = regex.match(pendingSearchCardNumber);
+        
+        if (!match.hasMatch()) {
+            statusLabel->setText("Invalid format. Please use AAAA-RR### (e.g., DREV-JP002).");
+            statusLabel->setStyleSheet("color: red;");
+            cardNumberInput->selectAll(); // Highlight the text so the user can quickly fix it
+            return; // Halt the search
+        }
 
         searchBtn->setEnabled(false);
 
@@ -499,7 +506,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + pendingSearchCardNumber + "&maxlag=5";
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.2 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.3 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
