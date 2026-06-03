@@ -125,7 +125,7 @@ private:
 
         QHBoxLayout *ioLayout = new QHBoxLayout();
         importBtn = new QPushButton("📥 Import from CSV", this);
-        exportBtn = new QPushButton("📤 Export to Excel (CSV)", this);
+        exportBtn = new QPushButton("📤 Export to CSV", this); // Updated button text
         syncBtn = new QPushButton("🔄 Update Card Names", this);
         syncBtn->setStyleSheet("background-color: #d1ecf1; font-weight: bold; padding: 5px;");
         
@@ -136,7 +136,7 @@ private:
 
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
-        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., CORI-JP040)");
+        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., DREV-JP002)"); // Updated placeholder text
         cardNumberInput->setStyleSheet("padding: 5px;");
         
         searchBtn = new QPushButton("Search Yugipedia", this);
@@ -416,7 +416,6 @@ private:
             }
             fields.append(currentField.trimmed());
 
-            // No backward compatibility: Strictly expects 5 columns
             if (fields.size() >= 5) {
                 query.bindValue(":num", fields[0]);
                 query.bindValue(":name", fields[1]);
