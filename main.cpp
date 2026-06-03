@@ -29,6 +29,8 @@
 #include <QKeyEvent> 
 #include <QTimer>
 #include <QDateTime>
+#include <QMap>
+#include <QList>
 
 class YGOCollection : public QWidget {
     Q_OBJECT
@@ -40,6 +42,9 @@ public:
         
         networkManager = new QNetworkAccessManager(this);
         connect(networkManager, &QNetworkAccessManager::finished, this, &YGOCollection::onApiReply);
+
+        syncNetworkManager = new QNetworkAccessManager(this);
+        connect(syncNetworkManager, &QNetworkAccessManager::finished, this, &YGOCollection::onSyncApiReply);
     }
 
 protected:
@@ -72,19 +77,27 @@ private:
     
     QPushButton *exportBtn;
     QPushButton *importBtn;
+    QPushButton *syncBtn; 
     QPushButton *deleteBtn; 
     
     // Data Models
     QSqlTableModel *tableModel;
     QNetworkAccessManager *networkManager;
+    QNetworkAccessManager *syncNetworkManager; 
     
     // API Safety Variables
     qint64 lastApiCallTime = 0;
     QString pendingSearchCardNumber;
     
+    // NEW: Batch Syncing Variables
+    QList<QStringList> pendingSyncBatches; // Holds chunks of 50 cards
+    QStringList currentSyncBatch;          // The specific 50 cards currently being processed
+    int totalCardsUpdatedDuringSync = 0;   // Keeps a running total across all batches
+    
     // Temporary storage
     QString currentCardName;
     QString currentCardNumber;
+    bool currentCardIsOfficial = true; 
 
     void setupDatabase() {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
@@ -101,20 +114,26 @@ private:
                    "card_number TEXT, "
                    "card_name TEXT, "
                    "rarity TEXT, "
-                   "quantity INTEGER)");
+                   "quantity INTEGER, "
+                   "is_official INTEGER DEFAULT 1)");
+                   
+        query.exec("ALTER TABLE collection ADD COLUMN is_official INTEGER DEFAULT 1");
     }
 
     void setupUI() {
         QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-        // --- Top Row: Import / Export ---
         QHBoxLayout *ioLayout = new QHBoxLayout();
         importBtn = new QPushButton("📥 Import from CSV", this);
         exportBtn = new QPushButton("📤 Export to Excel (CSV)", this);
+        syncBtn = new QPushButton("🔄 Smart Sync", this);
+        syncBtn->setStyleSheet("background-color: #d1ecf1; font-weight: bold; padding: 5px;");
+        
         ioLayout->addWidget(importBtn);
         ioLayout->addWidget(exportBtn);
+        ioLayout->addStretch();
+        ioLayout->addWidget(syncBtn);
 
-        // --- Second Row: Search ---
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
         cardNumberInput->setPlaceholderText("Enter Card Number (e.g., CORI-JP040)");
@@ -124,7 +143,6 @@ private:
         searchLayout->addWidget(cardNumberInput);
         searchLayout->addWidget(searchBtn);
         
-        // --- Third Row: Input Data ---
         QHBoxLayout *inputLayout = new QHBoxLayout();
         
         rarityCombo = new QComboBox(this);
@@ -148,7 +166,6 @@ private:
         statusLabel = new QLabel("Ready.", this);
         statusLabel->setStyleSheet("color: gray;");
 
-        // --- Bottom Row: Database Table ---
         tableView = new QTableView(this);
         tableModel = new QSqlTableModel(this);
         tableModel->setTable("collection");
@@ -161,25 +178,22 @@ private:
         tableModel->setHeaderData(4, Qt::Horizontal, "Quantity");
         
         tableView->setModel(tableModel);
-        
         tableView->setSelectionBehavior(QAbstractItemView::SelectRows); 
         tableView->setSelectionMode(QAbstractItemView::ExtendedSelection); 
-        
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         tableView->horizontalHeader()->setStretchLastSection(true); 
         tableView->setColumnWidth(1, 100); 
         tableView->setColumnWidth(2, 200); 
         
         tableView->hideColumn(0); 
+        tableView->hideColumn(5); 
 
-        // --- New Row: Table Actions ---
         QHBoxLayout *tableActionsLayout = new QHBoxLayout();
         deleteBtn = new QPushButton("❌ Delete Selected", this);
         deleteBtn->setStyleSheet("color: #d9534f; font-weight: bold; padding: 5px;");
         tableActionsLayout->addStretch(); 
         tableActionsLayout->addWidget(deleteBtn);
 
-        // Build Main Layout
         mainLayout->addLayout(ioLayout);
         mainLayout->addLayout(searchLayout);
         mainLayout->addWidget(statusLabel);
@@ -187,17 +201,93 @@ private:
         mainLayout->addWidget(tableView);
         mainLayout->addLayout(tableActionsLayout); 
 
-        // Connect Buttons & Enter Key 
         connect(cardNumberInput, &QLineEdit::returnPressed, this, &YGOCollection::searchCard);
         connect(searchBtn, &QPushButton::clicked, this, &YGOCollection::searchCard);
         connect(addBtn, &QPushButton::clicked, this, &YGOCollection::saveCardToDatabase);
         connect(exportBtn, &QPushButton::clicked, this, &YGOCollection::exportToCsv);
         connect(importBtn, &QPushButton::clicked, this, &YGOCollection::importFromCsv);
         connect(deleteBtn, &QPushButton::clicked, this, &YGOCollection::deleteSelectedCard);
+        connect(syncBtn, &QPushButton::clicked, this, &YGOCollection::startSmartSync);
 
         QShortcut *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), tableView);
         deleteShortcut->setContext(Qt::WidgetShortcut);
         connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
+    }
+
+    // --- NEW: Automated Batch Chunking ---
+    void startSmartSync() {
+        pendingSyncBatches.clear();
+        totalCardsUpdatedDuringSync = 0;
+        
+        QSqlQuery q("SELECT DISTINCT card_number FROM collection WHERE is_official = 0");
+        QStringList batch;
+        
+        // Loop through all unofficial cards and chunk them into arrays of 50
+        while (q.next()) {
+            batch.append(q.value(0).toString());
+            if (batch.size() == 50) {
+                pendingSyncBatches.append(batch);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            pendingSyncBatches.append(batch); // Append any remaining cards (e.g. the last 12)
+        }
+
+        if (pendingSyncBatches.isEmpty()) {
+            QMessageBox::information(this, "Smart Sync", "Your database is completely up to date!\n\nNo unofficial cards were found.");
+            return;
+        }
+
+        syncBtn->setEnabled(false);
+        processNextSyncBatch();
+    }
+
+    // --- NEW: Cooldown Controller for Batches ---
+    void processNextSyncBatch() {
+        if (pendingSyncBatches.isEmpty()) {
+            syncBtn->setEnabled(true);
+            if (totalCardsUpdatedDuringSync > 0) {
+                statusLabel->setText(QString("Smart Sync Complete! %1 total card(s) officially updated.").arg(totalCardsUpdatedDuringSync));
+                statusLabel->setStyleSheet("color: green;");
+                tableModel->select(); 
+            } else {
+                statusLabel->setText("Smart Sync Complete. Pending cards are still waiting for official release.");
+                statusLabel->setStyleSheet("color: black;");
+            }
+            return;
+        }
+
+        qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+        qint64 timeElapsed = currentTime - lastApiCallTime;
+
+        if (timeElapsed < 1000) {
+            int delayRemaining = 1000 - timeElapsed;
+            statusLabel->setText(QString("API Cooldown: Waiting %1 ms for next batch... (%2 batches remain)")
+                                 .arg(delayRemaining).arg(pendingSyncBatches.size()));
+            statusLabel->setStyleSheet("color: orange;");
+            
+            QTimer::singleShot(delayRemaining, this, &YGOCollection::executeSyncBatch);
+        } else {
+            executeSyncBatch();
+        }
+    }
+
+    // --- NEW: Batch Execution ---
+    void executeSyncBatch() {
+        lastApiCallTime = QDateTime::currentMSecsSinceEpoch();
+        currentSyncBatch = pendingSyncBatches.takeFirst(); // Pull the next 50 cards off the queue
+        
+        statusLabel->setText(QString("Syncing batch of %1 cards... (%2 batches remain)").arg(currentSyncBatch.size()).arg(pendingSyncBatches.size()));
+        statusLabel->setStyleSheet("color: blue;");
+
+        QString titlesJoined = currentSyncBatch.join("|");
+        QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + titlesJoined;
+        
+        QNetworkRequest request((QUrl(apiUrl)));
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.2 (Contact: user@example.com)");
+        
+        syncNetworkManager->get(request);
     }
 
     void deleteSelectedCard() {
@@ -347,9 +437,8 @@ private:
         statusLabel->setStyleSheet("color: green;");
     }
 
-    // --- NEW: Cooldown Logic ---
     void searchCard() {
-        if (!searchBtn->isEnabled()) return; // Prevent double firing from Enter key
+        if (!searchBtn->isEnabled()) return; 
 
         pendingSearchCardNumber = cardNumberInput->text().trimmed().toUpper();
         if (pendingSearchCardNumber.isEmpty()) return;
@@ -360,32 +449,26 @@ private:
         qint64 timeElapsed = currentTime - lastApiCallTime;
 
         if (timeElapsed < 1000) {
-            // Under 1 second: Queue the request and tell the user
             int delayRemaining = 1000 - timeElapsed;
             statusLabel->setText(QString("API Cooldown: Waiting %1 ms...").arg(delayRemaining));
             statusLabel->setStyleSheet("color: orange;");
             
             QTimer::singleShot(delayRemaining, this, &YGOCollection::executeApiRequest);
         } else {
-            // Over 1 second: Execute instantly
             executeApiRequest();
         }
     }
 
-    // --- NEW: Extracted Execution Logic ---
     void executeApiRequest() {
         lastApiCallTime = QDateTime::currentMSecsSinceEpoch();
         
         statusLabel->setText("Searching Yugipedia...");
         statusLabel->setStyleSheet("color: blue;");
         
-        // Added &maxlag=5 to the API string
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + pendingSearchCardNumber + "&maxlag=5";
         
         QNetworkRequest request((QUrl(apiUrl)));
-        
-        // User-Agent Identity
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YGOCollection (Contact: slash25@windowslive.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.2 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -407,8 +490,10 @@ private:
             int newQty = checkQuery.value(1).toInt() + inputQty;
 
             QSqlQuery updateQuery;
-            updateQuery.prepare("UPDATE collection SET quantity = :qty WHERE id = :id");
+            updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official WHERE id = :id");
             updateQuery.bindValue(":qty", newQty);
+            updateQuery.bindValue(":name", currentCardName);
+            updateQuery.bindValue(":official", currentCardIsOfficial ? 1 : 0);
             updateQuery.bindValue(":id", existingId);
             success = updateQuery.exec();
             
@@ -417,12 +502,13 @@ private:
             }
         } else {
             QSqlQuery insertQuery;
-            insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) "
-                                "VALUES (:number, :name, :rarity, :qty)");
+            insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official) "
+                                "VALUES (:number, :name, :rarity, :qty, :official)");
             insertQuery.bindValue(":number", currentCardNumber);
             insertQuery.bindValue(":name", currentCardName);
             insertQuery.bindValue(":rarity", inputRarity);
             insertQuery.bindValue(":qty", inputQty);
+            insertQuery.bindValue(":official", currentCardIsOfficial ? 1 : 0);
             success = insertQuery.exec();
             
             if (success) {
@@ -448,6 +534,80 @@ private:
     }
 
 private slots:
+
+    void onSyncApiReply(QNetworkReply *reply) {
+        if (reply->error() != QNetworkReply::NoError) {
+            statusLabel->setText("Smart Sync failed: Network Error.");
+            statusLabel->setStyleSheet("color: red;");
+            syncBtn->setEnabled(true);
+            reply->deleteLater();
+            return;
+        }
+
+        QByteArray response = reply->readAll();
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(response);
+        QJsonObject rootObj = jsonDoc.object();
+        QJsonObject queryObj = rootObj["query"].toObject();
+
+        QMap<QString, QString> nameToNumberMap;
+        for (const QString& num : currentSyncBatch) {
+            nameToNumberMap[num] = num; 
+        }
+        
+        if (queryObj.contains("redirects")) {
+            QJsonArray redirects = queryObj["redirects"].toArray();
+            for (int i = 0; i < redirects.size(); ++i) {
+                QString originalNumber = redirects[i].toObject()["from"].toString();
+                QString resolvedName = redirects[i].toObject()["to"].toString();
+                nameToNumberMap[resolvedName] = originalNumber;
+            }
+        }
+
+        QJsonObject pagesObj = queryObj["pages"].toObject();
+        int batchUpdatedCount = 0;
+
+        QSqlDatabase::database().transaction();
+        QSqlQuery updateQuery;
+        updateQuery.prepare("UPDATE collection SET card_name = :name, is_official = 1 WHERE card_number = :num");
+
+        for (const QString& key : pagesObj.keys()) {
+            if (key == "-1") continue;
+
+            QJsonObject pageObj = pagesObj[key].toObject();
+            QString newTitle = pageObj["title"].toString();
+            
+            QString wikitext;
+            QJsonArray revisions = pageObj["revisions"].toArray();
+            if (!revisions.isEmpty()) {
+                QJsonObject revObj = revisions[0].toObject();
+                if (revObj.contains("slots")) {
+                    wikitext = revObj["slots"].toObject()["main"].toObject()["*"].toString();
+                } else {
+                    wikitext = revObj["*"].toString(); 
+                }
+            }
+
+            if (!wikitext.isEmpty() && !wikitext.contains("{{Unofficial name|English}}", Qt::CaseInsensitive)) {
+                QString targetNumber = nameToNumberMap.value(newTitle);
+                if (!targetNumber.isEmpty()) {
+                    updateQuery.bindValue(":name", newTitle);
+                    updateQuery.bindValue(":num", targetNumber);
+                    if (updateQuery.exec()) {
+                        batchUpdatedCount++;
+                    }
+                }
+            }
+        }
+        
+        QSqlDatabase::database().commit();
+        totalCardsUpdatedDuringSync += batchUpdatedCount; // Add to global running total
+
+        reply->deleteLater();
+
+        // --- NEW: Trigger the next batch automatically ---
+        processNextSyncBatch();
+    }
+
     void onApiReply(QNetworkReply *reply) {
         searchBtn->setEnabled(true);
 
@@ -462,7 +622,6 @@ private slots:
         QJsonDocument jsonDoc = QJsonDocument::fromJson(response);
         QJsonObject rootObj = jsonDoc.object();
         
-        // --- NEW: Feature 3 (Maxlag Error Catching) ---
         if (rootObj.contains("error")) {
             QJsonObject errorObj = rootObj["error"].toObject();
             if (errorObj["code"].toString() == "maxlag") {
@@ -476,7 +635,6 @@ private slots:
         QJsonObject queryObj = rootObj["query"].toObject();
         QJsonObject pagesObj = queryObj["pages"].toObject();
 
-        // --- NEW: Safety check to prevent crashing on empty data ---
         QStringList pageKeys = pagesObj.keys();
         if (pageKeys.isEmpty()) {
             statusLabel->setText("Error: Unexpected or empty response from API.");
@@ -484,7 +642,7 @@ private slots:
             reply->deleteLater();
             return;
         }
-        
+
         QString pageKey = pageKeys.first();
         
         if (pageKey == "-1") {
@@ -497,7 +655,7 @@ private slots:
 
         QJsonObject pageObj = pagesObj[pageKey].toObject();
         currentCardName = pageObj["title"].toString();
-        currentCardNumber = pendingSearchCardNumber; // Use the stored valid string
+        currentCardNumber = pendingSearchCardNumber; 
 
         QString wikitext;
         QJsonArray revisions = pageObj["revisions"].toArray();
@@ -516,6 +674,8 @@ private slots:
             reply->deleteLater();
             return;
         }
+        
+        currentCardIsOfficial = !wikitext.contains("{{Unofficial name|English}}", Qt::CaseInsensitive);
 
         QStringList foundRarities;
         int index = 0;
@@ -591,7 +751,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     
     YGOCollection window;
-    window.setWindowTitle("YGO Collection");
+    window.setWindowTitle("Yu-Gi-Oh! Collection Manager");
     window.resize(650, 500);
     window.show();
     
