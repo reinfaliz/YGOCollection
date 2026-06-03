@@ -125,7 +125,7 @@ private:
 
         QHBoxLayout *ioLayout = new QHBoxLayout();
         importBtn = new QPushButton("📥 Import from CSV", this);
-        exportBtn = new QPushButton("📤 Export to CSV", this); // Updated button text
+        exportBtn = new QPushButton("📤 Export to CSV", this);
         syncBtn = new QPushButton("🔄 Update Card Names", this);
         syncBtn->setStyleSheet("background-color: #d1ecf1; font-weight: bold; padding: 5px;");
         
@@ -136,7 +136,7 @@ private:
 
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
-        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., DREV-JP002)"); // Updated placeholder text
+        cardNumberInput->setPlaceholderText("Enter Card Number (e.g., DREV-JP002)");
         cardNumberInput->setStyleSheet("padding: 5px;");
         
         searchBtn = new QPushButton("Search Yugipedia", this);
@@ -391,8 +391,17 @@ private:
         QString header = in.readLine(); 
 
         QSqlDatabase::database().transaction(); 
-        QSqlQuery query;
-        query.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official) VALUES (:num, :name, :rarity, :qty, :official)");
+        
+        // Prepare three separate queries for the duplication check
+        QSqlQuery checkQuery;
+        checkQuery.prepare("SELECT id, quantity FROM collection WHERE card_number = :num AND rarity = :rarity");
+
+        QSqlQuery updateQuery;
+        updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official WHERE id = :id");
+
+        QSqlQuery insertQuery;
+        insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official) "
+                            "VALUES (:num, :name, :rarity, :qty, :official)");
 
         int count = 0;
         while (!in.atEnd()) {
@@ -417,13 +426,36 @@ private:
             fields.append(currentField.trimmed());
 
             if (fields.size() >= 5) {
-                query.bindValue(":num", fields[0]);
-                query.bindValue(":name", fields[1]);
-                query.bindValue(":rarity", fields[2]);
-                query.bindValue(":qty", fields[3].toInt());
-                query.bindValue(":official", fields[4].toInt());
+                QString csvNum = fields[0];
+                QString csvName = fields[1];
+                QString csvRarity = fields[2];
+                int csvQty = fields[3].toInt();
+                int csvOfficial = fields[4].toInt();
                 
-                query.exec();
+                // Run the duplicate check
+                checkQuery.bindValue(":num", csvNum);
+                checkQuery.bindValue(":rarity", csvRarity);
+                checkQuery.exec();
+                
+                if (checkQuery.next()) {
+                    // Update existing row
+                    int existingId = checkQuery.value(0).toInt();
+                    int newQty = checkQuery.value(1).toInt() + csvQty;
+
+                    updateQuery.bindValue(":qty", newQty);
+                    updateQuery.bindValue(":name", csvName);
+                    updateQuery.bindValue(":official", csvOfficial);
+                    updateQuery.bindValue(":id", existingId);
+                    updateQuery.exec();
+                } else {
+                    // Insert brand new row
+                    insertQuery.bindValue(":num", csvNum);
+                    insertQuery.bindValue(":name", csvName);
+                    insertQuery.bindValue(":rarity", csvRarity);
+                    insertQuery.bindValue(":qty", csvQty);
+                    insertQuery.bindValue(":official", csvOfficial);
+                    insertQuery.exec();
+                }
                 count++;
             }
         }
@@ -432,7 +464,7 @@ private:
         file.close();
         
         tableModel->select(); 
-        statusLabel->setText(QString("Successfully imported %1 cards.").arg(count));
+        statusLabel->setText(QString("Successfully imported and merged %1 cards.").arg(count));
         statusLabel->setStyleSheet("color: green;");
     }
 
