@@ -89,10 +89,10 @@ private:
     qint64 lastApiCallTime = 0;
     QString pendingSearchCardNumber;
     
-    // NEW: Batch Syncing Variables
-    QList<QStringList> pendingSyncBatches; // Holds chunks of 50 cards
-    QStringList currentSyncBatch;          // The specific 50 cards currently being processed
-    int totalCardsUpdatedDuringSync = 0;   // Keeps a running total across all batches
+    // Batch Syncing Variables
+    QList<QStringList> pendingSyncBatches; 
+    QStringList currentSyncBatch;          
+    int totalCardsUpdatedDuringSync = 0;   
     
     // Temporary storage
     QString currentCardName;
@@ -126,7 +126,7 @@ private:
         QHBoxLayout *ioLayout = new QHBoxLayout();
         importBtn = new QPushButton("📥 Import from CSV", this);
         exportBtn = new QPushButton("📤 Export to Excel (CSV)", this);
-        syncBtn = new QPushButton("🔄 Smart Sync", this);
+        syncBtn = new QPushButton("🔄 Update Card Names", this);
         syncBtn->setStyleSheet("background-color: #d1ecf1; font-weight: bold; padding: 5px;");
         
         ioLayout->addWidget(importBtn);
@@ -214,7 +214,6 @@ private:
         connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
     }
 
-    // --- NEW: Automated Batch Chunking ---
     void startSmartSync() {
         pendingSyncBatches.clear();
         totalCardsUpdatedDuringSync = 0;
@@ -222,7 +221,6 @@ private:
         QSqlQuery q("SELECT DISTINCT card_number FROM collection WHERE is_official = 0");
         QStringList batch;
         
-        // Loop through all unofficial cards and chunk them into arrays of 50
         while (q.next()) {
             batch.append(q.value(0).toString());
             if (batch.size() == 50) {
@@ -231,11 +229,11 @@ private:
             }
         }
         if (!batch.isEmpty()) {
-            pendingSyncBatches.append(batch); // Append any remaining cards (e.g. the last 12)
+            pendingSyncBatches.append(batch); 
         }
 
         if (pendingSyncBatches.isEmpty()) {
-            QMessageBox::information(this, "Smart Sync", "Your database is completely up to date!\n\nNo unofficial cards were found.");
+            QMessageBox::information(this, "Update Card Names", "Your database is completely up to date!\n\nNo unofficial card names were found.");
             return;
         }
 
@@ -243,16 +241,15 @@ private:
         processNextSyncBatch();
     }
 
-    // --- NEW: Cooldown Controller for Batches ---
     void processNextSyncBatch() {
         if (pendingSyncBatches.isEmpty()) {
             syncBtn->setEnabled(true);
             if (totalCardsUpdatedDuringSync > 0) {
-                statusLabel->setText(QString("Smart Sync Complete! %1 total card(s) officially updated.").arg(totalCardsUpdatedDuringSync));
+                statusLabel->setText(QString("Update Complete! %1 total card name(s) officially updated.").arg(totalCardsUpdatedDuringSync));
                 statusLabel->setStyleSheet("color: green;");
                 tableModel->select(); 
             } else {
-                statusLabel->setText("Smart Sync Complete. Pending cards are still waiting for official release.");
+                statusLabel->setText("Update Complete. Pending cards are still waiting for official release.");
                 statusLabel->setStyleSheet("color: black;");
             }
             return;
@@ -273,10 +270,9 @@ private:
         }
     }
 
-    // --- NEW: Batch Execution ---
     void executeSyncBatch() {
         lastApiCallTime = QDateTime::currentMSecsSinceEpoch();
-        currentSyncBatch = pendingSyncBatches.takeFirst(); // Pull the next 50 cards off the queue
+        currentSyncBatch = pendingSyncBatches.takeFirst(); 
         
         statusLabel->setText(QString("Syncing batch of %1 cards... (%2 batches remain)").arg(currentSyncBatch.size()).arg(pendingSyncBatches.size()));
         statusLabel->setStyleSheet("color: blue;");
@@ -356,9 +352,9 @@ private:
         }
 
         QTextStream out(&file);
-        out << "Card Number,Card Name,Rarity,Quantity\n";
+        out << "Card Number,Card Name,Rarity,Quantity,Is Official\n";
 
-        QSqlQuery query("SELECT card_number, card_name, rarity, quantity FROM collection");
+        QSqlQuery query("SELECT card_number, card_name, rarity, quantity, is_official FROM collection");
         int count = 0;
         while (query.next()) {
             QString num = query.value(0).toString();
@@ -370,8 +366,9 @@ private:
             
             QString rar = query.value(2).toString();
             QString qty = query.value(3).toString();
+            QString official = query.value(4).toString(); 
             
-            out << num << "," << name << "," << rar << "," << qty << "\n";
+            out << num << "," << name << "," << rar << "," << qty << "," << official << "\n";
             count++;
         }
         
@@ -395,7 +392,7 @@ private:
 
         QSqlDatabase::database().transaction(); 
         QSqlQuery query;
-        query.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity) VALUES (:num, :name, :rarity, :qty)");
+        query.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official) VALUES (:num, :name, :rarity, :qty, :official)");
 
         int count = 0;
         while (!in.atEnd()) {
@@ -419,11 +416,14 @@ private:
             }
             fields.append(currentField.trimmed());
 
-            if (fields.size() >= 4) {
+            // No backward compatibility: Strictly expects 5 columns
+            if (fields.size() >= 5) {
                 query.bindValue(":num", fields[0]);
                 query.bindValue(":name", fields[1]);
                 query.bindValue(":rarity", fields[2]);
                 query.bindValue(":qty", fields[3].toInt());
+                query.bindValue(":official", fields[4].toInt());
+                
                 query.exec();
                 count++;
             }
@@ -537,7 +537,7 @@ private slots:
 
     void onSyncApiReply(QNetworkReply *reply) {
         if (reply->error() != QNetworkReply::NoError) {
-            statusLabel->setText("Smart Sync failed: Network Error.");
+            statusLabel->setText("Update failed: Network Error.");
             statusLabel->setStyleSheet("color: red;");
             syncBtn->setEnabled(true);
             reply->deleteLater();
@@ -600,11 +600,10 @@ private slots:
         }
         
         QSqlDatabase::database().commit();
-        totalCardsUpdatedDuringSync += batchUpdatedCount; // Add to global running total
+        totalCardsUpdatedDuringSync += batchUpdatedCount; 
 
         reply->deleteLater();
 
-        // --- NEW: Trigger the next batch automatically ---
         processNextSyncBatch();
     }
 
