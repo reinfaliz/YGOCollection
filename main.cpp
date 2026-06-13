@@ -31,6 +31,11 @@
 #include <QDateTime>
 #include <QMap>
 #include <QList>
+#include <QSettings>
+#include <QDialog>
+#include <QGridLayout>
+#include <QScrollArea>
+#include <QSet>
 
 struct CardDetails {
     QString name;
@@ -44,6 +49,139 @@ struct CardDetails {
     QString pendulumScale;
     QString atk;
     QString def;
+};
+
+// --- NEW: Advanced Sort Pop-up Dialog ---
+class SortOptionsDialog : public QDialog {
+    Q_OBJECT
+public:
+    SortOptionsDialog(QWidget *parent = nullptr) : QDialog(parent) {
+        setWindowTitle("Sort Options");
+        resize(400, 500);
+
+        QVBoxLayout *mainLayout = new QVBoxLayout(this);
+        QScrollArea *scrollArea = new QScrollArea(this);
+        scrollArea->setWidgetResizable(true);
+
+        QWidget *scrollWidget = new QWidget(scrollArea);
+        QGridLayout *gridLayout = new QGridLayout(scrollWidget);
+
+        QStringList allOptions = {"None", "Card Number", "Card Name", "Rarity", "Qty", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF"};
+        QStringList orderOptions = {"Ascending", "Descending"};
+
+        QSettings settings("YgoManager", "CollectionApp");
+
+        // Build the 13 Priority Rows
+        for (int i = 0; i < 13; ++i) {
+            QLabel *lbl = new QLabel(QString("Priority %1:").arg(i + 1), this);
+            QComboBox *fieldCombo = new QComboBox(this);
+            fieldCombo->addItems(allOptions);
+
+            QComboBox *orderCombo = new QComboBox(this);
+            orderCombo->addItems(orderOptions);
+
+            QString savedField = settings.value(QString("SortField%1").arg(i), "None").toString();
+            QString savedOrder = settings.value(QString("SortOrder%1").arg(i), "Ascending").toString();
+
+            fieldCombo->setCurrentText(savedField);
+            orderCombo->setCurrentText(savedOrder);
+
+            fieldCombos.append(fieldCombo);
+            orderCombos.append(orderCombo);
+
+            gridLayout->addWidget(lbl, i, 0);
+            gridLayout->addWidget(fieldCombo, i, 1);
+            gridLayout->addWidget(orderCombo, i, 2);
+
+            // Connect signal to handle graying-out and redundancy logic
+            connect(fieldCombo, &QComboBox::currentTextChanged, this, &SortOptionsDialog::onDropdownChanged);
+        }
+
+        scrollWidget->setLayout(gridLayout);
+        scrollArea->setWidget(scrollWidget);
+        mainLayout->addWidget(scrollArea);
+
+        QHBoxLayout *btnLayout = new QHBoxLayout();
+        QPushButton *applyBtn = new QPushButton("Apply & Sort", this);
+        applyBtn->setStyleSheet("background-color: #28a745; color: white; font-weight: bold; padding: 5px;");
+        QPushButton *cancelBtn = new QPushButton("Cancel", this);
+
+        btnLayout->addStretch();
+        btnLayout->addWidget(cancelBtn);
+        btnLayout->addWidget(applyBtn);
+        mainLayout->addLayout(btnLayout);
+
+        connect(applyBtn, &QPushButton::clicked, this, &SortOptionsDialog::saveAndAccept);
+        connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
+
+        // Force initial logic application
+        onDropdownChanged();
+    }
+
+private:
+    QList<QComboBox*> fieldCombos;
+    QList<QComboBox*> orderCombos;
+    bool updating = false;
+
+    void onDropdownChanged() {
+        if (updating) return; // Prevent recursion crashes
+        updating = true;
+        
+        QStringList allOptions = {"None", "Card Number", "Card Name", "Rarity", "Qty", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF"};
+        QSet<QString> used;
+        bool noneHit = false;
+
+        for (int i = 0; i < 13; ++i) {
+            // Rule 1: If "None" was hit above, lock out everything below it
+            if (noneHit) {
+                fieldCombos[i]->blockSignals(true);
+                fieldCombos[i]->setCurrentIndex(0); 
+                fieldCombos[i]->setEnabled(false);
+                fieldCombos[i]->blockSignals(false);
+                orderCombos[i]->setEnabled(false);
+                continue;
+            }
+
+            QString currentText = fieldCombos[i]->currentText();
+            fieldCombos[i]->setEnabled(true);
+
+            // Rule 2: Prevent duplicate selections
+            QStringList available = {"None"};
+            for (const QString& opt : allOptions) {
+                if (opt != "None" && (!used.contains(opt) || opt == currentText)) {
+                    available.append(opt);
+                }
+            }
+
+            if (!available.contains(currentText)) {
+                currentText = "None"; // Force reset if a duplicate was forcibly created
+            }
+
+            fieldCombos[i]->blockSignals(true);
+            fieldCombos[i]->clear();
+            fieldCombos[i]->addItems(available);
+            fieldCombos[i]->setCurrentText(currentText);
+            fieldCombos[i]->blockSignals(false);
+
+            if (currentText == "None") {
+                noneHit = true;
+                orderCombos[i]->setEnabled(false);
+            } else {
+                used.insert(currentText);
+                orderCombos[i]->setEnabled(true);
+            }
+        }
+        updating = false;
+    }
+
+    void saveAndAccept() {
+        QSettings settings("YgoManager", "CollectionApp");
+        for (int i = 0; i < 13; ++i) {
+            settings.setValue(QString("SortField%1").arg(i), fieldCombos[i]->currentText());
+            settings.setValue(QString("SortOrder%1").arg(i), orderCombos[i]->currentText());
+        }
+        accept();
+    }
 };
 
 class YGOCollection : public QWidget {
@@ -91,6 +229,7 @@ private:
     QPushButton *exportBtn;
     QPushButton *importBtn;
     QPushButton *syncBtn; 
+    QPushButton *sortOptionsBtn; // NEW: Sort Button
     QPushButton *deleteBtn; 
     
     QSqlTableModel *tableModel;
@@ -132,7 +271,6 @@ private:
         d.pendulumScale = extractValue(wikitext, "pendulum_scale");
         d.property = extractValue(wikitext, "property");
 
-        // --- NEW: Link Arrow calculation ---
         QString lvl = extractValue(wikitext, "level");
         QString rnk = extractValue(wikitext, "rank");
         QString lnkArrows = extractValue(wikitext, "link_arrows");
@@ -140,7 +278,6 @@ private:
         if (!lvl.isEmpty()) d.levelRankLink = lvl;
         else if (!rnk.isEmpty()) d.levelRankLink = rnk;
         else if (!lnkArrows.isEmpty()) {
-            // Count the commas to determine the Link Rating accurately!
             d.levelRankLink = QString::number(lnkArrows.split(QRegularExpression("\\s*,\\s*"), Qt::SkipEmptyParts).size());
         }
 
@@ -198,7 +335,6 @@ private:
         }
 
         QSqlQuery query;
-        // SWAPPED: spell_trap_property and monster_category now swapped in creation order
         query.exec("CREATE TABLE IF NOT EXISTS collection ("
                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                    "card_number TEXT, "
@@ -224,12 +360,14 @@ private:
         importBtn = new QPushButton("📥 Import from CSV", this);
         exportBtn = new QPushButton("📤 Export to CSV", this);
         syncBtn = new QPushButton("🔄 Update Card Names", this);
-        syncBtn->setStyleSheet("background-color: #d1ecf1; font-weight: bold; padding: 5px;");
+        sortOptionsBtn = new QPushButton("⚙️ Sort Options", this); // The new button!
         
+        // Pushed Update names to the left, Sort Options takes its place
         ioLayout->addWidget(importBtn);
         ioLayout->addWidget(exportBtn);
         ioLayout->addStretch();
         ioLayout->addWidget(syncBtn);
+        ioLayout->addWidget(sortOptionsBtn);
 
         QHBoxLayout *searchLayout = new QHBoxLayout();
         cardNumberInput = new QLineEdit(this);
@@ -266,7 +404,7 @@ private:
         tableView = new QTableView(this);
         tableModel = new QSqlTableModel(this);
         tableModel->setTable("collection");
-        tableModel->select();
+        tableModel->select(); // Opens cleanly in default mode on startup!
         tableModel->setEditStrategy(QSqlTableModel::OnFieldChange); 
         
         tableModel->setHeaderData(1, Qt::Horizontal, "Card Number");
@@ -274,11 +412,8 @@ private:
         tableModel->setHeaderData(3, Qt::Horizontal, "Rarity");
         tableModel->setHeaderData(4, Qt::Horizontal, "Qty");
         tableModel->setHeaderData(6, Qt::Horizontal, "Card Type");
-        
-        // SWAPPED headers for the UI Table
         tableModel->setHeaderData(7, Qt::Horizontal, "Spell/Trap Property");
         tableModel->setHeaderData(8, Qt::Horizontal, "Monster Category");
-        
         tableModel->setHeaderData(9, Qt::Horizontal, "Monster Type");
         tableModel->setHeaderData(10, Qt::Horizontal, "Attribute");
         tableModel->setHeaderData(11, Qt::Horizontal, "Level/Rank/Link");
@@ -318,10 +453,66 @@ private:
         connect(importBtn, &QPushButton::clicked, this, &YGOCollection::importFromCsv);
         connect(deleteBtn, &QPushButton::clicked, this, &YGOCollection::deleteSelectedCard);
         connect(syncBtn, &QPushButton::clicked, this, &YGOCollection::startSmartSync);
+        
+        // Connect the Sort Button
+        connect(sortOptionsBtn, &QPushButton::clicked, this, &YGOCollection::openSortOptions);
 
         QShortcut *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), tableView);
         deleteShortcut->setContext(Qt::WidgetShortcut);
         connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
+    }
+
+    // --- NEW: Executes the sorting logic ---
+    void openSortOptions() {
+        SortOptionsDialog dialog(this);
+        if (dialog.exec() == QDialog::Accepted) {
+            applySort();
+        }
+    }
+
+    void applySort() {
+        QSettings settings("YgoManager", "CollectionApp");
+        QStringList clauses;
+
+        QMap<QString, QString> colMap = {
+            {"Card Number", "card_number"}, {"Card Name", "card_name"}, {"Rarity", "rarity"},
+            {"Qty", "quantity"}, {"Card Type", "card_type"}, {"Spell/Trap Property", "spell_trap_property"},
+            {"Monster Category", "monster_category"}, {"Monster Type", "monster_type"}, {"Attribute", "attribute"},
+            {"Level/Rank/Link", "level_rank_link"}, {"Pendulum Scale", "pendulum_scale"}, {"ATK", "atk"}, {"DEF", "def"}
+        };
+
+        for (int i = 0; i < 13; ++i) {
+            QString field = settings.value(QString("SortField%1").arg(i), "None").toString();
+            QString order = settings.value(QString("SortOrder%1").arg(i), "Ascending").toString();
+
+            if (field == "None") continue;
+
+            QString sqlOrder = (order == "Ascending") ? "ASC" : "DESC";
+            QString col = colMap.value(field, "");
+
+            if (col.isEmpty()) continue;
+
+            // Mathematical check to force "?" to behave nicely, while sorting raw numbers correctly
+            if (field == "ATK" || field == "DEF" || field == "Level/Rank/Link" || field == "Pendulum Scale") {
+                clauses.append(QString("CASE WHEN %1 = '?' THEN 1 ELSE 0 END %2, CAST(%1 AS INTEGER) %2").arg(col).arg(sqlOrder));
+            } else if (field == "Qty") {
+                clauses.append(QString("%1 %2").arg(col).arg(sqlOrder)); 
+            } else {
+                // COLLATE NOCASE ensures "Blue-Eyes" and "blue-eyes" are sorted perfectly together
+                clauses.append(QString("%1 COLLATE NOCASE %2").arg(col).arg(sqlOrder));
+            }
+        }
+
+        // SQL Injection Hack: By applying ORDER BY to the setFilter, it bypasses Qt's single-column restriction!
+        if (clauses.isEmpty()) {
+            tableModel->setFilter(""); // Clears rules if everything is "None"
+        } else {
+            tableModel->setFilter("1=1 ORDER BY " + clauses.join(", "));
+        }
+        
+        tableModel->select();
+        statusLabel->setText("Collection sorted successfully.");
+        statusLabel->setStyleSheet("color: green;");
     }
 
     void startSmartSync() {
@@ -462,10 +653,8 @@ private:
         }
 
         QTextStream out(&file);
-        // SWAPPED the strings in the CSV header
         out << "Card Number,Card Name,Rarity,Quantity,Is Official,Card Type,Spell/Trap Property,Monster Category,Monster Type,Attribute,Level/Rank/Link,Pendulum Scale,ATK,DEF\n";
 
-        // SWAPPED the query selection order
         QSqlQuery query("SELECT card_number, card_name, rarity, quantity, is_official, card_type, spell_trap_property, monster_category, monster_type, attribute, level_rank_link, pendulum_scale, atk, def FROM collection");
         int count = 0;
         while (query.next()) {
@@ -555,11 +744,8 @@ private:
                     updateQuery.bindValue(":name", csvName);
                     updateQuery.bindValue(":official", csvOfficial);
                     updateQuery.bindValue(":ct", fields[5]);
-                    
-                    // SWAPPED: Using correctly mapped indexes for the new CSV layout
                     updateQuery.bindValue(":stp", fields[6]);
                     updateQuery.bindValue(":mc", fields[7]);
-                    
                     updateQuery.bindValue(":mt", fields[8]);
                     updateQuery.bindValue(":attr", fields[9]);
                     updateQuery.bindValue(":lrl", fields[10]);
@@ -575,11 +761,8 @@ private:
                     insertQuery.bindValue(":qty", csvQty);
                     insertQuery.bindValue(":official", csvOfficial);
                     insertQuery.bindValue(":ct", fields[5]);
-                    
-                    // SWAPPED: Using correctly mapped indexes for the new CSV layout
                     insertQuery.bindValue(":stp", fields[6]);
                     insertQuery.bindValue(":mc", fields[7]);
-                    
                     insertQuery.bindValue(":mt", fields[8]);
                     insertQuery.bindValue(":attr", fields[9]);
                     insertQuery.bindValue(":lrl", fields[10]);
