@@ -32,6 +32,21 @@
 #include <QMap>
 #include <QList>
 
+// --- NEW: Struct to hold all parsed data cleanly ---
+struct CardDetails {
+    QString name;
+    bool isOfficial;
+    QString type;
+    QString category;
+    QString property;
+    QString monsterType;
+    QString attribute;
+    QString levelRankLink;
+    QString pendulumScale;
+    QString atk;
+    QString def;
+};
+
 class YGOCollection : public QWidget {
     Q_OBJECT
 
@@ -94,10 +109,88 @@ private:
     QStringList currentSyncBatch;          
     int totalCardsUpdatedDuringSync = 0;   
     
-    // Temporary storage
-    QString currentCardName;
+    // NEW: Temporary Storage Object
     QString currentCardNumber;
-    bool currentCardIsOfficial = true; 
+    CardDetails currentCardDetails;
+
+    // --- NEW: Universal Wikitext Parser Engine ---
+    CardDetails parseWikitext(const QString& wikitext, const QString& title) {
+        CardDetails d;
+        d.name = title;
+        d.isOfficial = !wikitext.contains("{{Unofficial name|English}}", Qt::CaseInsensitive);
+
+        auto extractValue = [&](const QString& text, const QString& key) -> QString {
+            QRegularExpression rx("\\|\\s*" + key + "\\s*=\\s*([^\\n|]+)");
+            QRegularExpressionMatch match = rx.match(text);
+            if (match.hasMatch()) {
+                QString val = match.captured(1).trimmed();
+                val.remove('[').remove(']'); // Clean Wiki links
+                val.remove(QRegularExpression("<[^>]*>")); // Clean HTML
+                val.remove(QRegularExpression("")); // Clean Comments
+                return val.trimmed();
+            }
+            return "";
+        };
+
+        d.type = extractValue(wikitext, "card_type");
+        d.attribute = extractValue(wikitext, "attribute").toUpper();
+        d.atk = extractValue(wikitext, "atk");
+        d.def = extractValue(wikitext, "def");
+        d.pendulumScale = extractValue(wikitext, "pendulum_scale");
+        d.property = extractValue(wikitext, "property");
+
+        // Hierarchy Check for Level / Rank / Link
+        QString lvl = extractValue(wikitext, "level");
+        QString rnk = extractValue(wikitext, "rank");
+        QString lnk = extractValue(wikitext, "link");
+        if (!lvl.isEmpty()) d.levelRankLink = lvl;
+        else if (!rnk.isEmpty()) d.levelRankLink = rnk;
+        else if (!lnk.isEmpty()) d.levelRankLink = lnk;
+
+        // Extracting Monster Types and Category using Priority Filter
+        QString typesStr = extractValue(wikitext, "types");
+        if (!typesStr.isEmpty()) {
+            QStringList typeParts = typesStr.split(QRegularExpression("\\s*/\\s*"));
+            QStringList validTypes = {"Aqua", "Beast", "Beast-Warrior", "Creator God", "Cyberse", "Dinosaur", "Divine-Beast", "Dragon", "Fairy", "Fiend", "Fish", "Illusion", "Insect", "Machine", "Plant", "Psychic", "Pyro", "Reptile", "Rock", "Sea Serpent", "Spellcaster", "Thunder", "Warrior", "Winged Beast", "Wyrm", "Zombie"};
+            QStringList catPriority = {"Link", "Xyz", "Synchro", "Fusion", "Ritual", "Normal", "Effect"};
+
+            // 1. Find the Base Monster Type
+            for (const QString& part : typeParts) {
+                QString p = part.trimmed();
+                for (const QString& valid : validTypes) {
+                    if (p.compare(valid, Qt::CaseInsensitive) == 0) {
+                        d.monsterType = valid;
+                        break;
+                    }
+                }
+            }
+
+            // 2. Find the Monster Category using strict hierarchy
+            for (const QString& priorityCat : catPriority) {
+                bool found = false;
+                for (const QString& part : typeParts) {
+                    if (part.trimmed().compare(priorityCat, Qt::CaseInsensitive) == 0) {
+                        d.category = priorityCat;
+                        found = true; 
+                        break;
+                    }
+                }
+                if (found) break; // Break the outer loop as soon as the highest priority is found!
+            }
+        }
+
+        // Logic Fallback for missing 'card_type = Monster'
+        if (d.type.contains("Spell", Qt::CaseInsensitive)) d.type = "Spell";
+        else if (d.type.contains("Trap", Qt::CaseInsensitive)) d.type = "Trap";
+        else if (d.type.contains("Token", Qt::CaseInsensitive)) d.type = "Token";
+        else {
+            if (!d.attribute.isEmpty() || !d.atk.isEmpty() || !d.def.isEmpty() || !d.monsterType.isEmpty()) {
+                d.type = "Monster";
+            }
+        }
+
+        return d;
+    }
 
     void setupDatabase() {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
@@ -117,7 +210,17 @@ private:
                    "quantity INTEGER, "
                    "is_official INTEGER DEFAULT 1)");
                    
+        // Seamless migration: Add the columns safely
         query.exec("ALTER TABLE collection ADD COLUMN is_official INTEGER DEFAULT 1");
+        query.exec("ALTER TABLE collection ADD COLUMN card_type TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN monster_category TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN spell_trap_property TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN monster_type TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN attribute TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN level_rank_link TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN pendulum_scale TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN atk TEXT");
+        query.exec("ALTER TABLE collection ADD COLUMN def TEXT");
     }
 
     void setupUI() {
@@ -175,18 +278,28 @@ private:
         tableModel->setHeaderData(1, Qt::Horizontal, "Card Number");
         tableModel->setHeaderData(2, Qt::Horizontal, "Card Name");
         tableModel->setHeaderData(3, Qt::Horizontal, "Rarity");
-        tableModel->setHeaderData(4, Qt::Horizontal, "Quantity");
+        tableModel->setHeaderData(4, Qt::Horizontal, "Qty");
+        tableModel->setHeaderData(6, Qt::Horizontal, "Card Type");
+        tableModel->setHeaderData(7, Qt::Horizontal, "Monster Category");
+        tableModel->setHeaderData(8, Qt::Horizontal, "Spell/Trap Property");
+        tableModel->setHeaderData(9, Qt::Horizontal, "Monster Type");
+        tableModel->setHeaderData(10, Qt::Horizontal, "Attribute");
+        tableModel->setHeaderData(11, Qt::Horizontal, "Level/Rank/Link");
+        tableModel->setHeaderData(12, Qt::Horizontal, "Pendulum Scale");
+        tableModel->setHeaderData(13, Qt::Horizontal, "ATK");
+        tableModel->setHeaderData(14, Qt::Horizontal, "DEF");
         
         tableView->setModel(tableModel);
         tableView->setSelectionBehavior(QAbstractItemView::SelectRows); 
         tableView->setSelectionMode(QAbstractItemView::ExtendedSelection); 
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         tableView->horizontalHeader()->setStretchLastSection(true); 
+        
+        tableView->hideColumn(0); // Hide ID
+        tableView->hideColumn(5); // Hide is_official
+        
         tableView->setColumnWidth(1, 100); 
         tableView->setColumnWidth(2, 200); 
-        
-        tableView->hideColumn(0); 
-        tableView->hideColumn(5); 
 
         QHBoxLayout *tableActionsLayout = new QHBoxLayout();
         deleteBtn = new QPushButton("❌ Delete Selected", this);
@@ -245,7 +358,7 @@ private:
         if (pendingSyncBatches.isEmpty()) {
             syncBtn->setEnabled(true);
             if (totalCardsUpdatedDuringSync > 0) {
-                statusLabel->setText(QString("Update Complete! %1 total card name(s) officially updated.").arg(totalCardsUpdatedDuringSync));
+                statusLabel->setText(QString("Update Complete! %1 total card(s) officially updated.").arg(totalCardsUpdatedDuringSync));
                 statusLabel->setStyleSheet("color: green;");
                 tableModel->select(); 
             } else {
@@ -281,7 +394,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + titlesJoined;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.2 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.4 (Contact: user@example.com)");
         
         syncNetworkManager->get(request);
     }
@@ -352,23 +465,20 @@ private:
         }
 
         QTextStream out(&file);
-        out << "Card Number,Card Name,Rarity,Quantity,Is Official\n";
+        out << "Card Number,Card Name,Rarity,Quantity,Is Official,Card Type,Monster Category,Spell/Trap Property,Monster Type,Attribute,Level/Rank/Link,Pendulum Scale,ATK,DEF\n";
 
-        QSqlQuery query("SELECT card_number, card_name, rarity, quantity, is_official FROM collection");
+        QSqlQuery query("SELECT card_number, card_name, rarity, quantity, is_official, card_type, monster_category, spell_trap_property, monster_type, attribute, level_rank_link, pendulum_scale, atk, def FROM collection");
         int count = 0;
         while (query.next()) {
-            QString num = query.value(0).toString();
-            QString name = query.value(1).toString();
-            
-            if (name.contains(",")) {
-                name = "\"" + name + "\"";
+            QStringList rowData;
+            for (int i = 0; i < 14; ++i) {
+                QString val = query.value(i).toString();
+                if (val.contains(",")) {
+                    val = "\"" + val + "\""; // Wrap in quotes if it contains a comma
+                }
+                rowData.append(val);
             }
-            
-            QString rar = query.value(2).toString();
-            QString qty = query.value(3).toString();
-            QString official = query.value(4).toString(); 
-            
-            out << num << "," << name << "," << rar << "," << qty << "," << official << "\n";
+            out << rowData.join(",") << "\n";
             count++;
         }
         
@@ -396,11 +506,14 @@ private:
         checkQuery.prepare("SELECT id, quantity FROM collection WHERE card_number = :num AND rarity = :rarity");
 
         QSqlQuery updateQuery;
-        updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official WHERE id = :id");
+        updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official, "
+                            "card_type = :ct, monster_category = :mc, spell_trap_property = :stp, monster_type = :mt, "
+                            "attribute = :attr, level_rank_link = :lrl, pendulum_scale = :ps, atk = :atk, def = :def WHERE id = :id");
 
         QSqlQuery insertQuery;
-        insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official) "
-                            "VALUES (:num, :name, :rarity, :qty, :official)");
+        insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official, "
+                            "card_type, monster_category, spell_trap_property, monster_type, attribute, level_rank_link, pendulum_scale, atk, def) "
+                            "VALUES (:num, :name, :rarity, :qty, :official, :ct, :mc, :stp, :mt, :attr, :lrl, :ps, :atk, :def)");
 
         int count = 0;
         while (!in.atEnd()) {
@@ -424,7 +537,8 @@ private:
             }
             fields.append(currentField.trimmed());
 
-            if (fields.size() >= 5) {
+            // Strictly expects 14 columns
+            if (fields.size() >= 14) {
                 QString csvNum = fields[0];
                 QString csvName = fields[1];
                 QString csvRarity = fields[2];
@@ -442,6 +556,15 @@ private:
                     updateQuery.bindValue(":qty", newQty);
                     updateQuery.bindValue(":name", csvName);
                     updateQuery.bindValue(":official", csvOfficial);
+                    updateQuery.bindValue(":ct", fields[5]);
+                    updateQuery.bindValue(":mc", fields[6]);
+                    updateQuery.bindValue(":stp", fields[7]);
+                    updateQuery.bindValue(":mt", fields[8]);
+                    updateQuery.bindValue(":attr", fields[9]);
+                    updateQuery.bindValue(":lrl", fields[10]);
+                    updateQuery.bindValue(":ps", fields[11]);
+                    updateQuery.bindValue(":atk", fields[12]);
+                    updateQuery.bindValue(":def", fields[13]);
                     updateQuery.bindValue(":id", existingId);
                     updateQuery.exec();
                 } else {
@@ -450,6 +573,15 @@ private:
                     insertQuery.bindValue(":rarity", csvRarity);
                     insertQuery.bindValue(":qty", csvQty);
                     insertQuery.bindValue(":official", csvOfficial);
+                    insertQuery.bindValue(":ct", fields[5]);
+                    insertQuery.bindValue(":mc", fields[6]);
+                    insertQuery.bindValue(":stp", fields[7]);
+                    insertQuery.bindValue(":mt", fields[8]);
+                    insertQuery.bindValue(":attr", fields[9]);
+                    insertQuery.bindValue(":lrl", fields[10]);
+                    insertQuery.bindValue(":ps", fields[11]);
+                    insertQuery.bindValue(":atk", fields[12]);
+                    insertQuery.bindValue(":def", fields[13]);
                     insertQuery.exec();
                 }
                 count++;
@@ -470,15 +602,14 @@ private:
         pendingSearchCardNumber = cardNumberInput->text().trimmed().toUpper();
         if (pendingSearchCardNumber.isEmpty()) return;
 
-        // --- NEW: Regex Validation ---
         QRegularExpression regex("^[A-Z0-9]{2,5}-[A-Z]{0,2}[0-9A-Z]{1,4}$");
         QRegularExpressionMatch match = regex.match(pendingSearchCardNumber);
         
         if (!match.hasMatch()) {
             statusLabel->setText("Invalid format. Please use AAAA-RR### (e.g., DREV-JP002).");
             statusLabel->setStyleSheet("color: red;");
-            cardNumberInput->selectAll(); // Highlight the text so the user can quickly fix it
-            return; // Halt the search
+            cardNumberInput->selectAll(); 
+            return; 
         }
 
         searchBtn->setEnabled(false);
@@ -506,7 +637,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + pendingSearchCardNumber + "&maxlag=5";
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.3 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.4 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -528,10 +659,21 @@ private:
             int newQty = checkQuery.value(1).toInt() + inputQty;
 
             QSqlQuery updateQuery;
-            updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official WHERE id = :id");
+            updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official, "
+                                "card_type = :ct, monster_category = :mc, spell_trap_property = :stp, monster_type = :mt, "
+                                "attribute = :attr, level_rank_link = :lrl, pendulum_scale = :ps, atk = :atk, def = :def WHERE id = :id");
             updateQuery.bindValue(":qty", newQty);
-            updateQuery.bindValue(":name", currentCardName);
-            updateQuery.bindValue(":official", currentCardIsOfficial ? 1 : 0);
+            updateQuery.bindValue(":name", currentCardDetails.name);
+            updateQuery.bindValue(":official", currentCardDetails.isOfficial ? 1 : 0);
+            updateQuery.bindValue(":ct", currentCardDetails.type);
+            updateQuery.bindValue(":mc", currentCardDetails.category);
+            updateQuery.bindValue(":stp", currentCardDetails.property);
+            updateQuery.bindValue(":mt", currentCardDetails.monsterType);
+            updateQuery.bindValue(":attr", currentCardDetails.attribute);
+            updateQuery.bindValue(":lrl", currentCardDetails.levelRankLink);
+            updateQuery.bindValue(":ps", currentCardDetails.pendulumScale);
+            updateQuery.bindValue(":atk", currentCardDetails.atk);
+            updateQuery.bindValue(":def", currentCardDetails.def);
             updateQuery.bindValue(":id", existingId);
             success = updateQuery.exec();
             
@@ -540,13 +682,23 @@ private:
             }
         } else {
             QSqlQuery insertQuery;
-            insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official) "
-                                "VALUES (:number, :name, :rarity, :qty, :official)");
+            insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official, "
+                                "card_type, monster_category, spell_trap_property, monster_type, attribute, level_rank_link, pendulum_scale, atk, def) "
+                                "VALUES (:number, :name, :rarity, :qty, :official, :ct, :mc, :stp, :mt, :attr, :lrl, :ps, :atk, :def)");
             insertQuery.bindValue(":number", currentCardNumber);
-            insertQuery.bindValue(":name", currentCardName);
+            insertQuery.bindValue(":name", currentCardDetails.name);
             insertQuery.bindValue(":rarity", inputRarity);
             insertQuery.bindValue(":qty", inputQty);
-            insertQuery.bindValue(":official", currentCardIsOfficial ? 1 : 0);
+            insertQuery.bindValue(":official", currentCardDetails.isOfficial ? 1 : 0);
+            insertQuery.bindValue(":ct", currentCardDetails.type);
+            insertQuery.bindValue(":mc", currentCardDetails.category);
+            insertQuery.bindValue(":stp", currentCardDetails.property);
+            insertQuery.bindValue(":mt", currentCardDetails.monsterType);
+            insertQuery.bindValue(":attr", currentCardDetails.attribute);
+            insertQuery.bindValue(":lrl", currentCardDetails.levelRankLink);
+            insertQuery.bindValue(":ps", currentCardDetails.pendulumScale);
+            insertQuery.bindValue(":atk", currentCardDetails.atk);
+            insertQuery.bindValue(":def", currentCardDetails.def);
             success = insertQuery.exec();
             
             if (success) {
@@ -606,7 +758,9 @@ private slots:
 
         QSqlDatabase::database().transaction();
         QSqlQuery updateQuery;
-        updateQuery.prepare("UPDATE collection SET card_name = :name, is_official = 1 WHERE card_number = :num");
+        updateQuery.prepare("UPDATE collection SET card_name = :name, is_official = 1, "
+                            "card_type = :ct, monster_category = :mc, spell_trap_property = :stp, monster_type = :mt, "
+                            "attribute = :attr, level_rank_link = :lrl, pendulum_scale = :ps, atk = :atk, def = :def WHERE card_number = :num");
 
         for (const QString& key : pagesObj.keys()) {
             if (key == "-1") continue;
@@ -625,13 +779,28 @@ private slots:
                 }
             }
 
-            if (!wikitext.isEmpty() && !wikitext.contains("{{Unofficial name|English}}", Qt::CaseInsensitive)) {
-                QString targetNumber = nameToNumberMap.value(newTitle);
-                if (!targetNumber.isEmpty()) {
-                    updateQuery.bindValue(":name", newTitle);
-                    updateQuery.bindValue(":num", targetNumber);
-                    if (updateQuery.exec()) {
-                        batchUpdatedCount++;
+            if (!wikitext.isEmpty()) {
+                CardDetails d = parseWikitext(wikitext, newTitle);
+                
+                // If it is now official, forcefully update all its new translated stats in the local database
+                if (d.isOfficial) {
+                    QString targetNumber = nameToNumberMap.value(newTitle);
+                    if (!targetNumber.isEmpty()) {
+                        updateQuery.bindValue(":name", d.name);
+                        updateQuery.bindValue(":ct", d.type);
+                        updateQuery.bindValue(":mc", d.category);
+                        updateQuery.bindValue(":stp", d.property);
+                        updateQuery.bindValue(":mt", d.monsterType);
+                        updateQuery.bindValue(":attr", d.attribute);
+                        updateQuery.bindValue(":lrl", d.levelRankLink);
+                        updateQuery.bindValue(":ps", d.pendulumScale);
+                        updateQuery.bindValue(":atk", d.atk);
+                        updateQuery.bindValue(":def", d.def);
+                        updateQuery.bindValue(":num", targetNumber);
+                        
+                        if (updateQuery.exec()) {
+                            batchUpdatedCount++;
+                        }
                     }
                 }
             }
@@ -691,7 +860,7 @@ private slots:
         }
 
         QJsonObject pageObj = pagesObj[pageKey].toObject();
-        currentCardName = pageObj["title"].toString();
+        QString tempTitle = pageObj["title"].toString();
         currentCardNumber = pendingSearchCardNumber; 
 
         QString wikitext;
@@ -712,7 +881,8 @@ private slots:
             return;
         }
         
-        currentCardIsOfficial = !wikitext.contains("{{Unofficial name|English}}", Qt::CaseInsensitive);
+        // --- NEW: Parse all the specific data points using the helper function ---
+        currentCardDetails = parseWikitext(wikitext, tempTitle);
 
         QStringList foundRarities;
         int index = 0;
@@ -758,10 +928,10 @@ private slots:
 
         if (foundRarities.isEmpty()) {
             foundRarities.append("Common");
-            statusLabel->setText("Card found: " + currentCardName + " (Rarities not found in text)");
+            statusLabel->setText("Card found: " + currentCardDetails.name + " (Rarities not found in text)");
             statusLabel->setStyleSheet("color: orange;");
         } else {
-            statusLabel->setText("Card found: " + currentCardName);
+            statusLabel->setText("Card found: " + currentCardDetails.name);
             statusLabel->setStyleSheet("color: black;");
         }
 
@@ -789,7 +959,8 @@ int main(int argc, char *argv[]) {
     
     YGOCollection window;
     window.setWindowTitle("Yu-Gi-Oh! Collection Manager");
-    window.resize(650, 500);
+    // Increased window size to accommodate 14 columns naturally!
+    window.resize(1000, 600);
     window.show();
     
     return app.exec();
