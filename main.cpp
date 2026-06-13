@@ -132,16 +132,20 @@ private:
         d.pendulumScale = extractValue(wikitext, "pendulum_scale");
         d.property = extractValue(wikitext, "property");
 
+        // --- NEW: Link Arrow calculation ---
         QString lvl = extractValue(wikitext, "level");
         QString rnk = extractValue(wikitext, "rank");
-        QString lnk = extractValue(wikitext, "link");
+        QString lnkArrows = extractValue(wikitext, "link_arrows");
+        
         if (!lvl.isEmpty()) d.levelRankLink = lvl;
         else if (!rnk.isEmpty()) d.levelRankLink = rnk;
-        else if (!lnk.isEmpty()) d.levelRankLink = lnk;
+        else if (!lnkArrows.isEmpty()) {
+            // Count the commas to determine the Link Rating accurately!
+            d.levelRankLink = QString::number(lnkArrows.split(QRegularExpression("\\s*,\\s*"), Qt::SkipEmptyParts).size());
+        }
 
         QString typesStr = extractValue(wikitext, "types");
         if (!typesStr.isEmpty()) {
-            // Highly compatible manual split for older Qt versions
             QStringList typeParts;
             for(const QString& part : typesStr.split('/')) {
                 typeParts.append(part.trimmed());
@@ -194,24 +198,23 @@ private:
         }
 
         QSqlQuery query;
+        // SWAPPED: spell_trap_property and monster_category now swapped in creation order
         query.exec("CREATE TABLE IF NOT EXISTS collection ("
                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                    "card_number TEXT, "
                    "card_name TEXT, "
                    "rarity TEXT, "
                    "quantity INTEGER, "
-                   "is_official INTEGER DEFAULT 1)");
-                   
-        query.exec("ALTER TABLE collection ADD COLUMN is_official INTEGER DEFAULT 1");
-        query.exec("ALTER TABLE collection ADD COLUMN card_type TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN monster_category TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN spell_trap_property TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN monster_type TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN attribute TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN level_rank_link TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN pendulum_scale TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN atk TEXT");
-        query.exec("ALTER TABLE collection ADD COLUMN def TEXT");
+                   "is_official INTEGER DEFAULT 1, "
+                   "card_type TEXT, "
+                   "spell_trap_property TEXT, "
+                   "monster_category TEXT, "
+                   "monster_type TEXT, "
+                   "attribute TEXT, "
+                   "level_rank_link TEXT, "
+                   "pendulum_scale TEXT, "
+                   "atk TEXT, "
+                   "def TEXT)");
     }
 
     void setupUI() {
@@ -271,8 +274,11 @@ private:
         tableModel->setHeaderData(3, Qt::Horizontal, "Rarity");
         tableModel->setHeaderData(4, Qt::Horizontal, "Qty");
         tableModel->setHeaderData(6, Qt::Horizontal, "Card Type");
-        tableModel->setHeaderData(7, Qt::Horizontal, "Monster Category");
-        tableModel->setHeaderData(8, Qt::Horizontal, "Spell/Trap Property");
+        
+        // SWAPPED headers for the UI Table
+        tableModel->setHeaderData(7, Qt::Horizontal, "Spell/Trap Property");
+        tableModel->setHeaderData(8, Qt::Horizontal, "Monster Category");
+        
         tableModel->setHeaderData(9, Qt::Horizontal, "Monster Type");
         tableModel->setHeaderData(10, Qt::Horizontal, "Attribute");
         tableModel->setHeaderData(11, Qt::Horizontal, "Level/Rank/Link");
@@ -456,9 +462,11 @@ private:
         }
 
         QTextStream out(&file);
-        out << "Card Number,Card Name,Rarity,Quantity,Is Official,Card Type,Monster Category,Spell/Trap Property,Monster Type,Attribute,Level/Rank/Link,Pendulum Scale,ATK,DEF\n";
+        // SWAPPED the strings in the CSV header
+        out << "Card Number,Card Name,Rarity,Quantity,Is Official,Card Type,Spell/Trap Property,Monster Category,Monster Type,Attribute,Level/Rank/Link,Pendulum Scale,ATK,DEF\n";
 
-        QSqlQuery query("SELECT card_number, card_name, rarity, quantity, is_official, card_type, monster_category, spell_trap_property, monster_type, attribute, level_rank_link, pendulum_scale, atk, def FROM collection");
+        // SWAPPED the query selection order
+        QSqlQuery query("SELECT card_number, card_name, rarity, quantity, is_official, card_type, spell_trap_property, monster_category, monster_type, attribute, level_rank_link, pendulum_scale, atk, def FROM collection");
         int count = 0;
         while (query.next()) {
             QStringList rowData;
@@ -498,13 +506,13 @@ private:
 
         QSqlQuery updateQuery;
         updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official, "
-                            "card_type = :ct, monster_category = :mc, spell_trap_property = :stp, monster_type = :mt, "
+                            "card_type = :ct, spell_trap_property = :stp, monster_category = :mc, monster_type = :mt, "
                             "attribute = :attr, level_rank_link = :lrl, pendulum_scale = :ps, atk = :atk, def = :def WHERE id = :id");
 
         QSqlQuery insertQuery;
         insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official, "
-                            "card_type, monster_category, spell_trap_property, monster_type, attribute, level_rank_link, pendulum_scale, atk, def) "
-                            "VALUES (:num, :name, :rarity, :qty, :official, :ct, :mc, :stp, :mt, :attr, :lrl, :ps, :atk, :def)");
+                            "card_type, spell_trap_property, monster_category, monster_type, attribute, level_rank_link, pendulum_scale, atk, def) "
+                            "VALUES (:num, :name, :rarity, :qty, :official, :ct, :stp, :mc, :mt, :attr, :lrl, :ps, :atk, :def)");
 
         int count = 0;
         while (!in.atEnd()) {
@@ -547,8 +555,11 @@ private:
                     updateQuery.bindValue(":name", csvName);
                     updateQuery.bindValue(":official", csvOfficial);
                     updateQuery.bindValue(":ct", fields[5]);
-                    updateQuery.bindValue(":mc", fields[6]);
-                    updateQuery.bindValue(":stp", fields[7]);
+                    
+                    // SWAPPED: Using correctly mapped indexes for the new CSV layout
+                    updateQuery.bindValue(":stp", fields[6]);
+                    updateQuery.bindValue(":mc", fields[7]);
+                    
                     updateQuery.bindValue(":mt", fields[8]);
                     updateQuery.bindValue(":attr", fields[9]);
                     updateQuery.bindValue(":lrl", fields[10]);
@@ -564,8 +575,11 @@ private:
                     insertQuery.bindValue(":qty", csvQty);
                     insertQuery.bindValue(":official", csvOfficial);
                     insertQuery.bindValue(":ct", fields[5]);
-                    insertQuery.bindValue(":mc", fields[6]);
-                    insertQuery.bindValue(":stp", fields[7]);
+                    
+                    // SWAPPED: Using correctly mapped indexes for the new CSV layout
+                    insertQuery.bindValue(":stp", fields[6]);
+                    insertQuery.bindValue(":mc", fields[7]);
+                    
                     insertQuery.bindValue(":mt", fields[8]);
                     insertQuery.bindValue(":attr", fields[9]);
                     insertQuery.bindValue(":lrl", fields[10]);
@@ -650,14 +664,14 @@ private:
 
             QSqlQuery updateQuery;
             updateQuery.prepare("UPDATE collection SET quantity = :qty, card_name = :name, is_official = :official, "
-                                "card_type = :ct, monster_category = :mc, spell_trap_property = :stp, monster_type = :mt, "
+                                "card_type = :ct, spell_trap_property = :stp, monster_category = :mc, monster_type = :mt, "
                                 "attribute = :attr, level_rank_link = :lrl, pendulum_scale = :ps, atk = :atk, def = :def WHERE id = :id");
             updateQuery.bindValue(":qty", newQty);
             updateQuery.bindValue(":name", currentCardDetails.name);
             updateQuery.bindValue(":official", currentCardDetails.isOfficial ? 1 : 0);
             updateQuery.bindValue(":ct", currentCardDetails.type);
-            updateQuery.bindValue(":mc", currentCardDetails.category);
             updateQuery.bindValue(":stp", currentCardDetails.property);
+            updateQuery.bindValue(":mc", currentCardDetails.category);
             updateQuery.bindValue(":mt", currentCardDetails.monsterType);
             updateQuery.bindValue(":attr", currentCardDetails.attribute);
             updateQuery.bindValue(":lrl", currentCardDetails.levelRankLink);
@@ -673,16 +687,16 @@ private:
         } else {
             QSqlQuery insertQuery;
             insertQuery.prepare("INSERT INTO collection (card_number, card_name, rarity, quantity, is_official, "
-                                "card_type, monster_category, spell_trap_property, monster_type, attribute, level_rank_link, pendulum_scale, atk, def) "
-                                "VALUES (:number, :name, :rarity, :qty, :official, :ct, :mc, :stp, :mt, :attr, :lrl, :ps, :atk, :def)");
+                                "card_type, spell_trap_property, monster_category, monster_type, attribute, level_rank_link, pendulum_scale, atk, def) "
+                                "VALUES (:number, :name, :rarity, :qty, :official, :ct, :stp, :mc, :mt, :attr, :lrl, :ps, :atk, :def)");
             insertQuery.bindValue(":number", currentCardNumber);
             insertQuery.bindValue(":name", currentCardDetails.name);
             insertQuery.bindValue(":rarity", inputRarity);
             insertQuery.bindValue(":qty", inputQty);
             insertQuery.bindValue(":official", currentCardDetails.isOfficial ? 1 : 0);
             insertQuery.bindValue(":ct", currentCardDetails.type);
-            insertQuery.bindValue(":mc", currentCardDetails.category);
             insertQuery.bindValue(":stp", currentCardDetails.property);
+            insertQuery.bindValue(":mc", currentCardDetails.category);
             insertQuery.bindValue(":mt", currentCardDetails.monsterType);
             insertQuery.bindValue(":attr", currentCardDetails.attribute);
             insertQuery.bindValue(":lrl", currentCardDetails.levelRankLink);
@@ -749,7 +763,7 @@ private slots:
         QSqlDatabase::database().transaction();
         QSqlQuery updateQuery;
         updateQuery.prepare("UPDATE collection SET card_name = :name, is_official = 1, "
-                            "card_type = :ct, monster_category = :mc, spell_trap_property = :stp, monster_type = :mt, "
+                            "card_type = :ct, spell_trap_property = :stp, monster_category = :mc, monster_type = :mt, "
                             "attribute = :attr, level_rank_link = :lrl, pendulum_scale = :ps, atk = :atk, def = :def WHERE card_number = :num");
 
         for (const QString& key : pagesObj.keys()) {
@@ -777,8 +791,8 @@ private slots:
                     if (!targetNumber.isEmpty()) {
                         updateQuery.bindValue(":name", d.name);
                         updateQuery.bindValue(":ct", d.type);
-                        updateQuery.bindValue(":mc", d.category);
                         updateQuery.bindValue(":stp", d.property);
+                        updateQuery.bindValue(":mc", d.category);
                         updateQuery.bindValue(":mt", d.monsterType);
                         updateQuery.bindValue(":attr", d.attribute);
                         updateQuery.bindValue(":lrl", d.levelRankLink);
@@ -898,7 +912,6 @@ private slots:
                 raritiesStr.remove(QRegularExpression("<[^>]*>"));
                 raritiesStr.remove(QRegularExpression(""));
                 
-                // Highly compatible manual split for rarities
                 QStringList rawRarities;
                 for(const QString& p1 : raritiesStr.split(',')) {
                     for(const QString& p2 : p1.split('/')) {
