@@ -32,7 +32,6 @@
 #include <QMap>
 #include <QList>
 
-// --- NEW: Struct to hold all parsed data cleanly ---
 struct CardDetails {
     QString name;
     bool isOfficial;
@@ -81,7 +80,6 @@ protected:
     }
 
 private:
-    // UI Elements
     QLineEdit *cardNumberInput;
     QPushButton *searchBtn;
     QComboBox *rarityCombo;
@@ -95,25 +93,20 @@ private:
     QPushButton *syncBtn; 
     QPushButton *deleteBtn; 
     
-    // Data Models
     QSqlTableModel *tableModel;
     QNetworkAccessManager *networkManager;
     QNetworkAccessManager *syncNetworkManager; 
     
-    // API Safety Variables
     qint64 lastApiCallTime = 0;
     QString pendingSearchCardNumber;
     
-    // Batch Syncing Variables
     QList<QStringList> pendingSyncBatches; 
     QStringList currentSyncBatch;          
     int totalCardsUpdatedDuringSync = 0;   
     
-    // NEW: Temporary Storage Object
     QString currentCardNumber;
     CardDetails currentCardDetails;
 
-    // --- NEW: Universal Wikitext Parser Engine ---
     CardDetails parseWikitext(const QString& wikitext, const QString& title) {
         CardDetails d;
         d.name = title;
@@ -124,9 +117,9 @@ private:
             QRegularExpressionMatch match = rx.match(text);
             if (match.hasMatch()) {
                 QString val = match.captured(1).trimmed();
-                val.remove('[').remove(']'); // Clean Wiki links
-                val.remove(QRegularExpression("<[^>]*>")); // Clean HTML
-                val.remove(QRegularExpression("")); // Clean Comments
+                val.remove('[').remove(']'); 
+                val.remove(QRegularExpression("<[^>]*>")); 
+                val.remove(QRegularExpression("")); 
                 return val.trimmed();
             }
             return "";
@@ -139,7 +132,6 @@ private:
         d.pendulumScale = extractValue(wikitext, "pendulum_scale");
         d.property = extractValue(wikitext, "property");
 
-        // Hierarchy Check for Level / Rank / Link
         QString lvl = extractValue(wikitext, "level");
         QString rnk = extractValue(wikitext, "rank");
         QString lnk = extractValue(wikitext, "link");
@@ -147,39 +139,39 @@ private:
         else if (!rnk.isEmpty()) d.levelRankLink = rnk;
         else if (!lnk.isEmpty()) d.levelRankLink = lnk;
 
-        // Extracting Monster Types and Category using Priority Filter
         QString typesStr = extractValue(wikitext, "types");
         if (!typesStr.isEmpty()) {
-            QStringList typeParts = typesStr.split(QRegularExpression("\\s*/\\s*"));
+            // Highly compatible manual split for older Qt versions
+            QStringList typeParts;
+            for(const QString& part : typesStr.split('/')) {
+                typeParts.append(part.trimmed());
+            }
+            
             QStringList validTypes = {"Aqua", "Beast", "Beast-Warrior", "Creator God", "Cyberse", "Dinosaur", "Divine-Beast", "Dragon", "Fairy", "Fiend", "Fish", "Illusion", "Insect", "Machine", "Plant", "Psychic", "Pyro", "Reptile", "Rock", "Sea Serpent", "Spellcaster", "Thunder", "Warrior", "Winged Beast", "Wyrm", "Zombie"};
             QStringList catPriority = {"Link", "Xyz", "Synchro", "Fusion", "Ritual", "Normal", "Effect"};
 
-            // 1. Find the Base Monster Type
             for (const QString& part : typeParts) {
-                QString p = part.trimmed();
                 for (const QString& valid : validTypes) {
-                    if (p.compare(valid, Qt::CaseInsensitive) == 0) {
+                    if (part.compare(valid, Qt::CaseInsensitive) == 0) {
                         d.monsterType = valid;
                         break;
                     }
                 }
             }
 
-            // 2. Find the Monster Category using strict hierarchy
             for (const QString& priorityCat : catPriority) {
                 bool found = false;
                 for (const QString& part : typeParts) {
-                    if (part.trimmed().compare(priorityCat, Qt::CaseInsensitive) == 0) {
+                    if (part.compare(priorityCat, Qt::CaseInsensitive) == 0) {
                         d.category = priorityCat;
                         found = true; 
                         break;
                     }
                 }
-                if (found) break; // Break the outer loop as soon as the highest priority is found!
+                if (found) break; 
             }
         }
 
-        // Logic Fallback for missing 'card_type = Monster'
         if (d.type.contains("Spell", Qt::CaseInsensitive)) d.type = "Spell";
         else if (d.type.contains("Trap", Qt::CaseInsensitive)) d.type = "Trap";
         else if (d.type.contains("Token", Qt::CaseInsensitive)) d.type = "Token";
@@ -210,7 +202,6 @@ private:
                    "quantity INTEGER, "
                    "is_official INTEGER DEFAULT 1)");
                    
-        // Seamless migration: Add the columns safely
         query.exec("ALTER TABLE collection ADD COLUMN is_official INTEGER DEFAULT 1");
         query.exec("ALTER TABLE collection ADD COLUMN card_type TEXT");
         query.exec("ALTER TABLE collection ADD COLUMN monster_category TEXT");
@@ -295,8 +286,8 @@ private:
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         tableView->horizontalHeader()->setStretchLastSection(true); 
         
-        tableView->hideColumn(0); // Hide ID
-        tableView->hideColumn(5); // Hide is_official
+        tableView->hideColumn(0); 
+        tableView->hideColumn(5); 
         
         tableView->setColumnWidth(1, 100); 
         tableView->setColumnWidth(2, 200); 
@@ -394,7 +385,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + titlesJoined;
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.4 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.5 (Contact: user@example.com)");
         
         syncNetworkManager->get(request);
     }
@@ -474,7 +465,7 @@ private:
             for (int i = 0; i < 14; ++i) {
                 QString val = query.value(i).toString();
                 if (val.contains(",")) {
-                    val = "\"" + val + "\""; // Wrap in quotes if it contains a comma
+                    val = "\"" + val + "\""; 
                 }
                 rowData.append(val);
             }
@@ -537,7 +528,6 @@ private:
             }
             fields.append(currentField.trimmed());
 
-            // Strictly expects 14 columns
             if (fields.size() >= 14) {
                 QString csvNum = fields[0];
                 QString csvName = fields[1];
@@ -637,7 +627,7 @@ private:
         QString apiUrl = "https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=" + pendingSearchCardNumber + "&maxlag=5";
         
         QNetworkRequest request((QUrl(apiUrl)));
-        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.4 (Contact: user@example.com)");
+        request.setHeader(QNetworkRequest::UserAgentHeader, "YgoCollectionManager/2.5 (Contact: user@example.com)");
         
         networkManager->get(request);
     }
@@ -782,7 +772,6 @@ private slots:
             if (!wikitext.isEmpty()) {
                 CardDetails d = parseWikitext(wikitext, newTitle);
                 
-                // If it is now official, forcefully update all its new translated stats in the local database
                 if (d.isOfficial) {
                     QString targetNumber = nameToNumberMap.value(newTitle);
                     if (!targetNumber.isEmpty()) {
@@ -881,7 +870,6 @@ private slots:
             return;
         }
         
-        // --- NEW: Parse all the specific data points using the helper function ---
         currentCardDetails = parseWikitext(wikitext, tempTitle);
 
         QStringList foundRarities;
@@ -910,9 +898,15 @@ private slots:
                 raritiesStr.remove(QRegularExpression("<[^>]*>"));
                 raritiesStr.remove(QRegularExpression(""));
                 
-                QStringList splitRarities = raritiesStr.split(QRegularExpression("[,/]"), Qt::SkipEmptyParts);
+                // Highly compatible manual split for rarities
+                QStringList rawRarities;
+                for(const QString& p1 : raritiesStr.split(',')) {
+                    for(const QString& p2 : p1.split('/')) {
+                        rawRarities.append(p2);
+                    }
+                }
                 
-                for (QString rarity : splitRarities) {
+                for (QString rarity : rawRarities) {
                     rarity = rarity.trimmed();
                     if (!rarity.isEmpty() && !foundRarities.contains(rarity, Qt::CaseInsensitive)) {
                         foundRarities.append(rarity);
@@ -959,7 +953,6 @@ int main(int argc, char *argv[]) {
     
     YGOCollection window;
     window.setWindowTitle("Yu-Gi-Oh! Collection Manager");
-    // Increased window size to accommodate 14 columns naturally!
     window.resize(1000, 600);
     window.show();
     
