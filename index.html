@@ -207,6 +207,34 @@
         }
     }
 
+    // --- The JSONP Loophole Function ---
+    function fetchJSONP(url) {
+        return new Promise((resolve, reject) => {
+            // Create a temporary, random function name
+            const callbackName = 'ygoCallback_' + Math.round(100000 * Math.random());
+            
+            // Define what happens when Yugipedia answers
+            window[callbackName] = function(data) {
+                delete window[callbackName]; // Clean up memory
+                document.body.removeChild(script); // Remove the temporary script
+                resolve(data);
+            };
+
+            // Create a fake script tag to trick the browser's CORS policy
+            const script = document.createElement('script');
+            script.src = url + '&callback=' + callbackName;
+            
+            script.onerror = function() {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                reject(new Error("JSONP Request Failed"));
+            };
+
+            // Inject the script into the page, triggering the download!
+            document.body.appendChild(script);
+        });
+    }
+
     // --- Core Yugipedia API Search ---
     async function searchCard() {
         const inputStr = document.getElementById('cardNumberInput').value.trim().toUpperCase();
@@ -225,12 +253,12 @@
         statusLabel.style.color = "blue";
         currentCardNumber = inputStr;
 
-        const targetUrl = encodeURIComponent(`https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${inputStr}`);
-        const apiUrl = `https://api.allorigins.win/raw?url=${targetUrl}`;
+        // API URL
+        const apiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${encodeURIComponent(inputStr)}`;
 
         try {
-            const response = await fetch(apiUrl);
-            const data = await response.json();
+            // We use our new JSONP function instead of standard fetch()
+            const data = await fetchJSONP(apiUrl);
             
             if (data.error && data.error.code === "maxlag") {
                 statusLabel.textContent = "Yugipedia servers are busy (maxlag). Please wait a moment.";
