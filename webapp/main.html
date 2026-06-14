@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yu-Gi-Oh! Collection Manager</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1400px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .toolbar, .search-bar, .input-area {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #e9ecef;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        button:hover:not(:disabled) { background-color: #d3d6d8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .btn-sync { background-color: #d1ecf1; border-color: #bee5eb; }
+        .btn-sort { background-color: #fff3cd; border-color: #ffeeba; }
+        .btn-delete { color: white; background-color: #d9534f; border-color: #d43f3a; margin-top: 10px;}
+        .btn-apply { background-color: #28a745; color: white; border-color: #218838; }
+        
+        input[type="text"], select, input[type="number"] {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input[type="text"] { flex-grow: 1; }
+        
+        #statusLabel { font-style: italic; color: gray; margin-bottom: 15px; display: block; font-weight: 500;}
+        
+        /* Table Styling */
+        .table-wrapper {
+            overflow-x: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 60vh;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            white-space: nowrap;
+        }
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+        }
+        th { 
+            background-color: #f8f9fa; 
+            position: sticky; 
+            top: 0; 
+            z-index: 1;
+            box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+        }
+        tr:hover { background-color: #f1f1f1; cursor: pointer; }
+        tr.selected { background-color: #cce5ff; }
+
+        /* Modal Styling */
+        .modal-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 450px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; }
+        .modal-body { overflow-y: auto; flex-grow: 1; margin-bottom: 15px; padding-right: 10px;}
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+        .sort-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center;}
+        .sort-row select { flex-grow: 1; }
+        .sort-row label { width: 80px; font-size: 0.9em; font-weight: bold; color: #555;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="toolbar">
+        <button onclick="document.getElementById('csvUpload').click()">📥 Import from CSV</button>
+        <input type="file" id="csvUpload" accept=".csv" style="display: none;" onchange="importCSV(event)">
+        <button onclick="exportCSV()">📤 Export to CSV</button>
+        <div style="flex-grow: 1;"></div>
+        <button class="btn-sync" onclick="alert('Batch updating currently requires a server environment to bypass mass-CORS logic, but works flawlessly in C++!')">🔄 Update Card Names</button>
+        <button class="btn-sort" onclick="openSortModal()">⚙️ Sort Options</button>
+    </div>
+
+    <div class="search-bar">
+        <input type="text" id="cardNumberInput" placeholder="Enter Card Number (e.g., DREV-JP002)" onkeypress="handleEnter(event, 'search')">
+        <button id="searchBtn" onclick="searchCard()">Search Yugipedia</button>
+    </div>
+    
+    <span id="statusLabel">Ready.</span>
+
+    <div class="input-area">
+        <label>Rarity:</label>
+        <select id="rarityCombo" disabled></select>
+        <label>Qty:</label>
+        <input type="number" id="quantitySpinBox" min="1" value="1" disabled onkeypress="handleEnter(event, 'save')">
+        <button id="addBtn" onclick="saveCardToDatabase()" disabled>Add to Collection</button>
+    </div>
+
+    <div class="table-wrapper">
+        <table id="collectionTable">
+            <thead>
+                <tr>
+                    <th>Card Number</th>
+                    <th>Card Name</th>
+                    <th>Rarity</th>
+                    <th>Quantity</th>
+                    <th>Card Type</th>
+                    <th>Spell/Trap Property</th>
+                    <th>Monster Category</th>
+                    <th>Monster Type</th>
+                    <th>Attribute</th>
+                    <th>Level/Rank/Link</th>
+                    <th>Pendulum Scale</th>
+                    <th>ATK</th>
+                    <th>DEF</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+    <button class="btn-delete" onclick="deleteSelected()">❌ Delete Selected</button>
+</div>
+
+<div class="modal-overlay" id="sortModal">
+    <div class="modal-content">
+        <div class="modal-header">Advanced Sort Options</div>
+        <div class="modal-body" id="sortRowsContainer">
+            </div>
+        <div class="modal-footer">
+            <button onclick="closeSortModal()">Cancel</button>
+            <button class="btn-apply" onclick="applyAndSort()">Apply & Sort</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Application State ---
+    let collection = []; 
+    let currentCardDetails = null;
+    let currentCardNumber = "";
+    let selectedRows = new Set();
+    const statusLabel = document.getElementById('statusLabel');
+
+    // Mappings to match the exact CSV headers from the C++ version
+    const fieldMappings = {
+        "None": "none",
+        "Card Number": "Card Number",
+        "Card Name": "Card Name",
+        "Rarity": "Rarity",
+        "Qty": "Quantity",
+        "Card Type": "Card Type",
+        "Spell/Trap Property": "Spell/Trap Property",
+        "Monster Category": "Monster Category",
+        "Monster Type": "Monster Type",
+        "Attribute": "Attribute",
+        "Level/Rank/Link": "Level/Rank/Link",
+        "Pendulum Scale": "Pendulum Scale",
+        "ATK": "ATK",
+        "DEF": "DEF"
+    };
+    const fieldKeys = Object.keys(fieldMappings);
+
+    // --- UI Helpers ---
+    function handleEnter(e, action) {
+        if (e.key === 'Enter') {
+            if (action === 'search') searchCard();
+            if (action === 'save' && !document.getElementById('addBtn').disabled) saveCardToDatabase();
+        }
+    }
+
+    // --- Core Yugipedia API Search ---
+    async function searchCard() {
+        const inputStr = document.getElementById('cardNumberInput').value.trim().toUpperCase();
+        if (!inputStr) return;
+
+        const regex = /^[A-Z0-9]{2,5}-[A-Z]{0,2}[0-9A-Z]{1,4}$/;
+        if (!regex.test(inputStr)) {
+            statusLabel.textContent = "Invalid format. Please use AAAA-RR### (e.g., DREV-JP002).";
+            statusLabel.style.color = "red";
+            document.getElementById('cardNumberInput').select();
+            return;
+        }
+
+        document.getElementById('searchBtn').disabled = true;
+        statusLabel.textContent = "Searching Yugipedia...";
+        statusLabel.style.color = "blue";
+        currentCardNumber = inputStr;
+
+        // Native API request with origin=*
+        const apiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${inputStr}&origin=*`;
+
+        try {
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            
+            if (data.error && data.error.code === "maxlag") {
+                statusLabel.textContent = "Yugipedia servers are busy (maxlag). Please wait a moment.";
+                statusLabel.style.color = "red";
+                document.getElementById('searchBtn').disabled = false;
+                return;
+            }
+
+            const pages = data.query.pages;
+            const pageKey = Object.keys(pages)[0];
+
+            if (pageKey === "-1") {
+                statusLabel.textContent = "Invalid card number. Not found on Yugipedia.";
+                statusLabel.style.color = "red";
+                document.getElementById('cardNumberInput').select();
+                document.getElementById('searchBtn').disabled = false;
+                return;
+            }
+
+            const pageObj = pages[pageKey];
+            const title = pageObj.title;
+            const wikitext = pageObj.revisions[0]['*'] || pageObj.revisions[0].slots.main['*'];
+
+            currentCardDetails = parseWikitext(wikitext, title);
+
+            // Extract Rarities
+            let foundRarities = [];
+            const lines = wikitext.split('\n');
+            for (let line of lines) {
+                if (line.includes(currentCardNumber)) {
+                    let parts = line.split(';');
+                    if (parts.length >= 3) {
+                        let raritiesStr = parts.slice(2).join(',');
+                        raritiesStr = raritiesStr.replace(/\[|\]|<[^>]*>|/g, '');
+                        let rawRarities = raritiesStr.split(/,|\//);
+                        
+                        for (let r of rawRarities) {
+                            let cleanR = r.trim();
+                            if (cleanR && !foundRarities.includes(cleanR)) {
+                                foundRarities.push(cleanR);
+                            }
+                        }
+                        if (foundRarities.length > 0) break;
+                    }
+                }
+            }
+
+            if (foundRarities.length === 0) {
+                foundRarities.push("Common");
+                statusLabel.textContent = `Card found: ${title} (Rarities not found)`;
+                statusLabel.style.color = "orange";
+            } else {
+                statusLabel.textContent = `Card found: ${title}`;
+                statusLabel.style.color = "black";
+            }
+
+            // Update UI
+            const rarityCombo = document.getElementById('rarityCombo');
+            rarityCombo.innerHTML = "";
+            foundRarities.forEach(r => {
+                let opt = document.createElement('option');
+                opt.value = r;
+                opt.textContent = r;
+                rarityCombo.appendChild(opt);
+            });
+
+            rarityCombo.disabled = foundRarities.length <= 1;
+            document.getElementById('quantitySpinBox').disabled = false;
+            document.getElementById('addBtn').disabled = false;
+            
+            if (foundRarities.length > 1) rarityCombo.focus();
+            else {
+                document.getElementById('quantitySpinBox').focus();
+                document.getElementById('quantitySpinBox').select();
+            }
+
+        } catch (error) {
+            statusLabel.textContent = "Network Error. Could not reach Yugipedia.";
+            statusLabel.style.color = "red";
+        }
+        document.getElementById('searchBtn').disabled = false;
+    }
+
+    // --- JS Port of the C++ Wikitext Parser ---
+    function parseWikitext(wikitext, title) {
+        let d = {
+            "Card Name": title,
+            "Is Official": !/\{\{Unofficial name\|English\}\}/i.test(wikitext) ? 1 : 0
+        };
+
+        const extract = (text, key) => {
+            const rx = new RegExp(`\\|\\s*${key}\\s*=\\s*([^\\n|]+)`);
+            const match = text.match(rx);
+            if (match) return match[1].replace(/\[|\]|<[^>]*>|/g, '').trim();
+            return "";
+        };
+
+        d["Card Type"] = extract(wikitext, "card_type");
+        d["Attribute"] = extract(wikitext, "attribute").toUpperCase();
+        d["ATK"] = extract(wikitext, "atk");
+        d["DEF"] = extract(wikitext, "def");
+        d["Pendulum Scale"] = extract(wikitext, "pendulum_scale");
+        d["Spell/Trap Property"] = extract(wikitext, "property");
+
+        // Link Arrow calculation logic
+        let lvl = extract(wikitext, "level");
+        let rnk = extract(wikitext, "rank");
+        let lnkArrows = extract(wikitext, "link_arrows");
+
+        if (lvl) d["Level/Rank/Link"] = lvl;
+        else if (rnk) d["Level/Rank/Link"] = rnk;
+        else if (lnkArrows) d["Level/Rank/Link"] = lnkArrows.split(/\s*,\s*/).filter(Boolean).length.toString();
+        else d["Level/Rank/Link"] = "";
+
+        let typesStr = extract(wikitext, "types");
+        d["Monster Type"] = "";
+        d["Monster Category"] = "";
+
+        if (typesStr) {
+            let typeParts = typesStr.split('/').map(s => s.trim());
+            const validTypes = ["Aqua", "Beast", "Beast-Warrior", "Creator God", "Cyberse", "Dinosaur", "Divine-Beast", "Dragon", "Fairy", "Fiend", "Fish", "Illusion", "Insect", "Machine", "Plant", "Psychic", "Pyro", "Reptile", "Rock", "Sea Serpent", "Spellcaster", "Thunder", "Warrior", "Winged Beast", "Wyrm", "Zombie"];
+            const catPriority = ["Link", "Xyz", "Synchro", "Fusion", "Ritual", "Normal", "Effect"];
+
+            for (let part of typeParts) {
+                let found = validTypes.find(v => v.toLowerCase() === part.toLowerCase());
+                if (found) { d["Monster Type"] = found; break; }
+            }
+            for (let priorityCat of catPriority) {
+                let found = typeParts.find(p => p.toLowerCase() === priorityCat.toLowerCase());
+                if (found) { d["Monster Category"] = priorityCat; break; }
+            }
+        }
+
+        if (/Spell/i.test(d["Card Type"])) d["Card Type"] = "Spell";
+        else if (/Trap/i.test(d["Card Type"])) d["Card Type"] = "Trap";
+        else if (/Token/i.test(d["Card Type"])) d["Card Type"] = "Token";
+        else if (d["Attribute"] || d["ATK"] || d["DEF"] || d["Monster Type"]) d["Card Type"] = "Monster";
+
+        return d;
+    }
+
+    // --- Array Data Management ---
+    function saveCardToDatabase() {
+        const rarity = document.getElementById('rarityCombo').value;
+        const qty = parseInt(document.getElementById('quantitySpinBox').value);
+
+        let existingIndex = collection.findIndex(c => c["Card Number"] === currentCardNumber && c["Rarity"] === rarity);
+
+        if (existingIndex !== -1) {
+            collection[existingIndex]["Quantity"] += qty;
+            
+            // Update other metadata just in case it officially changed
+            Object.keys(currentCardDetails).forEach(k => {
+                collection[existingIndex][k] = currentCardDetails[k];
+            });
+            
+            statusLabel.textContent = `Added +${qty} to existing stack. Total: ${collection[existingIndex]["Quantity"]}`;
+        } else {
+            let newCard = {
+                "Card Number": currentCardNumber,
+                "Rarity": rarity,
+                "Quantity": qty,
+                ...currentCardDetails
+            };
+            collection.push(newCard);
+            statusLabel.textContent = "New card added successfully!";
+        }
+
+        statusLabel.style.color = "green";
+        
+        document.getElementById('cardNumberInput').value = "";
+        document.getElementById('cardNumberInput').focus();
+        document.getElementById('rarityCombo').disabled = true;
+        document.getElementById('quantitySpinBox').value = 1;
+        document.getElementById('quantitySpinBox').disabled = true;
+        document.getElementById('addBtn').disabled = true;
+
+        renderTable();
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = "";
+        selectedRows.clear();
+
+        collection.forEach((card, index) => {
+            let tr = document.createElement('tr');
+            tr.onclick = () => toggleRowSelection(tr, index);
+            
+            tr.innerHTML = `
+                <td>${card["Card Number"] || ""}</td>
+                <td>${card["Card Name"] || ""}</td>
+                <td>${card["Rarity"] || ""}</td>
+                <td>${card["Quantity"] || 0}</td>
+                <td>${card["Card Type"] || ""}</td>
+                <td>${card["Spell/Trap Property"] || ""}</td>
+                <td>${card["Monster Category"] || ""}</td>
+                <td>${card["Monster Type"] || ""}</td>
+                <td>${card["Attribute"] || ""}</td>
+                <td>${card["Level/Rank/Link"] || ""}</td>
+                <td>${card["Pendulum Scale"] || ""}</td>
+                <td>${card["ATK"] || ""}</td>
+                <td>${card["DEF"] || ""}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function toggleRowSelection(rowElement, index) {
+        if (selectedRows.has(index)) {
+            selectedRows.delete(index);
+            rowElement.classList.remove('selected');
+        } else {
+            selectedRows.add(index);
+            rowElement.classList.add('selected');
+        }
+    }
+
+    function deleteSelected() {
+        if (selectedRows.size === 0) return;
+        if (confirm(`Are you sure you want to delete ${selectedRows.size} card(s)?`)) {
+            collection = collection.filter((_, index) => !selectedRows.has(index));
+            renderTable();
+            statusLabel.textContent = `Deleted selected cards.`;
+            statusLabel.style.color = "#d9534f";
+        }
+    }
+
+    // --- PapaParse Magic for CSV I/O ---
+    function exportCSV() {
+        if (collection.length === 0) {
+            alert("Your collection is empty!"); return;
+        }
+        
+        // Ensure column order matches C++ Exporter exactly
+        const columns = ["Card Number", "Card Name", "Rarity", "Quantity", "Is Official", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF"];
+        
+        const csv = Papa.unparse(collection, { columns: columns });
+        
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "YGO_Collection.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        statusLabel.textContent = `Successfully exported ${collection.length} cards to CSV.`;
+        statusLabel.style.color = "green";
+    }
+
+    function importCSV(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                let count = 0;
+                results.data.forEach(row => {
+                    let existingIndex = collection.findIndex(c => c["Card Number"] === row["Card Number"] && c["Rarity"] === row["Rarity"]);
+                    
+                    if (existingIndex !== -1) {
+                        collection[existingIndex]["Quantity"] += (row["Quantity"] || row["Qty"] || 1);
+                        
+                        // Overwrite metadata to ensure merged data stays fresh
+                        Object.keys(row).forEach(k => {
+                            if(k !== "Quantity" && k !== "Qty") collection[existingIndex][k] = row[k];
+                        });
+                    } else {
+                        // Handle missing Quantity safely
+                        if(!row["Quantity"] && row["Qty"]) row["Quantity"] = row["Qty"];
+                        else if (!row["Quantity"]) row["Quantity"] = 1;
+                        
+                        collection.push(row);
+                    }
+                    count++;
+                });
+                renderTable();
+                statusLabel.textContent = `Successfully imported and merged ${count} cards.`;
+                statusLabel.style.color = "green";
+                event.target.value = ""; 
+            }
+        });
+    }
+
+    // --- ADVANCED SORT OPTIONS MODAL ---
+    function buildSortModal() {
+        const container = document.getElementById('sortRowsContainer');
+        container.innerHTML = "";
+        
+        for (let i = 0; i < 13; i++) {
+            let row = document.createElement('div');
+            row.className = "sort-row";
+            
+            let label = document.createElement('label');
+            label.textContent = `Priority ${i + 1}:`;
+            
+            let fieldSelect = document.createElement('select');
+            fieldSelect.id = `sortField_${i}`;
+            fieldSelect.onchange = updateDropdowns;
+            
+            let orderSelect = document.createElement('select');
+            orderSelect.id = `sortOrder_${i}`;
+            orderSelect.innerHTML = `<option value="Ascending">Ascending</option><option value="Descending">Descending</option>`;
+            
+            row.appendChild(label);
+            row.appendChild(fieldSelect);
+            row.appendChild(orderSelect);
+            container.appendChild(row);
+        }
+        loadSortSettings();
+    }
+
+    function updateDropdowns() {
+        let used = new Set();
+        let noneHit = false;
+
+        for (let i = 0; i < 13; i++) {
+            let fieldSelect = document.getElementById(`sortField_${i}`);
+            let orderSelect = document.getElementById(`sortOrder_${i}`);
+            let currentVal = fieldSelect.value;
+
+            if (noneHit) {
+                fieldSelect.disabled = true;
+                orderSelect.disabled = true;
+                fieldSelect.innerHTML = `<option value="None">None</option>`;
+                continue;
+            }
+
+            fieldSelect.disabled = false;
+            
+            let availableOptions = ["None"];
+            fieldKeys.forEach(opt => {
+                if (opt !== "None" && (!used.has(opt) || opt === currentVal)) {
+                    availableOptions.push(opt);
+                }
+            });
+
+            if (!availableOptions.includes(currentVal)) {
+                currentVal = "None";
+            }
+
+            // Repopulate
+            fieldSelect.innerHTML = "";
+            availableOptions.forEach(opt => {
+                let option = document.createElement('option');
+                option.value = opt;
+                option.textContent = opt;
+                fieldSelect.appendChild(option);
+            });
+            fieldSelect.value = currentVal;
+
+            if (currentVal === "None") {
+                noneHit = true;
+                orderSelect.disabled = true;
+            } else {
+                used.add(currentVal);
+                orderSelect.disabled = false;
+            }
+        }
+    }
+
+    function loadSortSettings() {
+        const savedSettings = JSON.parse(localStorage.getItem('ygoSortSettings')) || [];
+        for (let i = 0; i < 13; i++) {
+            let fieldSelect = document.getElementById(`sortField_${i}`);
+            let orderSelect = document.getElementById(`sortOrder_${i}`);
+            
+            // Build temporary full list to set value properly before UI update
+            fieldSelect.innerHTML = "";
+            fieldKeys.forEach(opt => {
+                let option = document.createElement('option');
+                option.value = opt;
+                option.textContent = opt;
+                fieldSelect.appendChild(option);
+            });
+
+            if (savedSettings[i]) {
+                fieldSelect.value = savedSettings[i].field || "None";
+                orderSelect.value = savedSettings[i].order || "Ascending";
+            } else {
+                fieldSelect.value = "None";
+                orderSelect.value = "Ascending";
+            }
+        }
+        updateDropdowns(); // Apply the logic rules
+    }
+
+    function openSortModal() {
+        document.getElementById('sortModal').style.display = 'flex';
+        loadSortSettings();
+    }
+
+    function closeSortModal() {
+        document.getElementById('sortModal').style.display = 'none';
+    }
+
+    function applyAndSort() {
+        let settings = [];
+        for (let i = 0; i < 13; i++) {
+            settings.push({
+                field: document.getElementById(`sortField_${i}`).value,
+                order: document.getElementById(`sortOrder_${i}`).value
+            });
+        }
+        // Persist to Local Storage
+        localStorage.setItem('ygoSortSettings', JSON.stringify(settings));
+        closeSortModal();
+
+        // Perform the Multi-Level Sort
+        collection.sort((a, b) => {
+            for (let pref of settings) {
+                if (pref.field === "None") continue;
+                
+                let key = fieldMappings[pref.field];
+                let valA = a[key];
+                let valB = b[key];
+                let dir = pref.order === "Ascending" ? 1 : -1;
+
+                // ATK/DEF "?" Math Hack
+                const numericFields = ["ATK", "DEF", "Level/Rank/Link", "Pendulum Scale"];
+                if (numericFields.includes(key)) {
+                    let isQA = String(valA).trim() === "?";
+                    let isQB = String(valB).trim() === "?";
+                    
+                    if (isQA && !isQB) return 1 * dir; 
+                    if (!isQA && isQB) return -1 * dir;
+                    
+                    if (!isQA && !isQB) {
+                        let numA = parseFloat(valA) || 0;
+                        let numB = parseFloat(valB) || 0;
+                        if (numA !== numB) return (numA - numB) * dir;
+                    }
+                } 
+                else if (key === "Quantity") {
+                    let numA = parseInt(valA) || 0;
+                    let numB = parseInt(valB) || 0;
+                    if (numA !== numB) return (numA - numB) * dir;
+                } 
+                else {
+                    // String comparison
+                    let strA = String(valA || "").toLowerCase();
+                    let strB = String(valB || "").toLowerCase();
+                    if (strA < strB) return -1 * dir;
+                    if (strA > strB) return 1 * dir;
+                }
+            }
+            return 0; // If everything matches
+        });
+
+        renderTable();
+        statusLabel.textContent = "Collection sorted successfully.";
+        statusLabel.style.color = "green";
+    }
+
+    // Init Modal on Load
+    window.onload = () => {
+        buildSortModal();
+    };
+
+</script>
+</body>
+</html>
