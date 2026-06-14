@@ -37,6 +37,12 @@
 #include <QScrollArea>
 #include <QSet>
 
+// --- NEW: Includes for Web Links & Custom Rendering ---
+#include <QDesktopServices>
+#include <QUrl>
+#include <QStyledItemDelegate>
+#include <QPainter>
+
 struct CardDetails {
     QString name;
     bool isOfficial;
@@ -51,7 +57,33 @@ struct CardDetails {
     QString def;
 };
 
-// --- NEW: Advanced Sort Pop-up Dialog ---
+// --- NEW: Custom Delegate to draw the Wiki Link over the Database ID ---
+class WikiDelegate : public QStyledItemDelegate {
+    Q_OBJECT
+public:
+    explicit WikiDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    // Paints the book icon instead of the raw integer ID
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        
+        // Draw standard background (preserves row selection highlighting)
+        option.widget->style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter, option.widget);
+        
+        // Draw the icon centered in the cell
+        painter->save();
+        painter->drawText(opt.rect, Qt::AlignCenter, "📖");
+        painter->restore();
+    }
+
+    // Prevents the user from double-clicking and editing the database ID
+    QWidget* createEditor(QWidget*, const QStyleOptionViewItem&, const QModelIndex&) const override {
+        return nullptr; 
+    }
+};
+
+// --- Advanced Sort Pop-up Dialog ---
 class SortOptionsDialog : public QDialog {
     Q_OBJECT
 public:
@@ -93,7 +125,6 @@ public:
             gridLayout->addWidget(fieldCombo, i, 1);
             gridLayout->addWidget(orderCombo, i, 2);
 
-            // Connect signal to handle graying-out and redundancy logic
             connect(fieldCombo, &QComboBox::currentTextChanged, this, &SortOptionsDialog::onDropdownChanged);
         }
 
@@ -114,7 +145,6 @@ public:
         connect(applyBtn, &QPushButton::clicked, this, &SortOptionsDialog::saveAndAccept);
         connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
 
-        // Force initial logic application
         onDropdownChanged();
     }
 
@@ -124,7 +154,7 @@ private:
     bool updating = false;
 
     void onDropdownChanged() {
-        if (updating) return; // Prevent recursion crashes
+        if (updating) return; 
         updating = true;
         
         QStringList allOptions = {"None", "Card Number", "Card Name", "Rarity", "Qty", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF"};
@@ -132,7 +162,6 @@ private:
         bool noneHit = false;
 
         for (int i = 0; i < 13; ++i) {
-            // Rule 1: If "None" was hit above, lock out everything below it
             if (noneHit) {
                 fieldCombos[i]->blockSignals(true);
                 fieldCombos[i]->setCurrentIndex(0); 
@@ -145,7 +174,6 @@ private:
             QString currentText = fieldCombos[i]->currentText();
             fieldCombos[i]->setEnabled(true);
 
-            // Rule 2: Prevent duplicate selections
             QStringList available = {"None"};
             for (const QString& opt : allOptions) {
                 if (opt != "None" && (!used.contains(opt) || opt == currentText)) {
@@ -154,7 +182,7 @@ private:
             }
 
             if (!available.contains(currentText)) {
-                currentText = "None"; // Force reset if a duplicate was forcibly created
+                currentText = "None"; 
             }
 
             fieldCombos[i]->blockSignals(true);
@@ -229,7 +257,7 @@ private:
     QPushButton *exportBtn;
     QPushButton *importBtn;
     QPushButton *syncBtn; 
-    QPushButton *sortOptionsBtn; // NEW: Sort Button
+    QPushButton *sortOptionsBtn; 
     QPushButton *deleteBtn; 
     
     QSqlTableModel *tableModel;
@@ -360,9 +388,8 @@ private:
         importBtn = new QPushButton("📥 Import from CSV", this);
         exportBtn = new QPushButton("📤 Export to CSV", this);
         syncBtn = new QPushButton("🔄 Update Card Names", this);
-        sortOptionsBtn = new QPushButton("⚙️ Sort Options", this); // The new button!
+        sortOptionsBtn = new QPushButton("⚙️ Sort Options", this); 
         
-        // Pushed Update names to the left, Sort Options takes its place
         ioLayout->addWidget(importBtn);
         ioLayout->addWidget(exportBtn);
         ioLayout->addStretch();
@@ -404,9 +431,11 @@ private:
         tableView = new QTableView(this);
         tableModel = new QSqlTableModel(this);
         tableModel->setTable("collection");
-        tableModel->select(); // Opens cleanly in default mode on startup!
+        tableModel->select(); 
         tableModel->setEditStrategy(QSqlTableModel::OnFieldChange); 
         
+        // --- NEW: Using Column 0 (ID) as the Wiki column ---
+        tableModel->setHeaderData(0, Qt::Horizontal, "Wiki"); 
         tableModel->setHeaderData(1, Qt::Horizontal, "Card Number");
         tableModel->setHeaderData(2, Qt::Horizontal, "Card Name");
         tableModel->setHeaderData(3, Qt::Horizontal, "Rarity");
@@ -427,8 +456,11 @@ private:
         tableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
         tableView->horizontalHeader()->setStretchLastSection(true); 
         
-        tableView->hideColumn(0); 
-        tableView->hideColumn(5); 
+        // --- NEW: Apply Delegate and resize ---
+        tableView->setItemDelegateForColumn(0, new WikiDelegate(this));
+        tableView->setColumnWidth(0, 40); 
+        
+        tableView->hideColumn(5); // is_official is still hidden
         
         tableView->setColumnWidth(1, 100); 
         tableView->setColumnWidth(2, 200); 
@@ -453,16 +485,23 @@ private:
         connect(importBtn, &QPushButton::clicked, this, &YGOCollection::importFromCsv);
         connect(deleteBtn, &QPushButton::clicked, this, &YGOCollection::deleteSelectedCard);
         connect(syncBtn, &QPushButton::clicked, this, &YGOCollection::startSmartSync);
-        
-        // Connect the Sort Button
         connect(sortOptionsBtn, &QPushButton::clicked, this, &YGOCollection::openSortOptions);
 
         QShortcut *deleteShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), tableView);
         deleteShortcut->setContext(Qt::WidgetShortcut);
         connect(deleteShortcut, &QShortcut::activated, this, &YGOCollection::deleteSelectedCard);
+        
+        // --- NEW: Trigger Web Browser when the Wiki column is clicked ---
+        connect(tableView, &QTableView::clicked, this, [this](const QModelIndex &index) {
+            if (index.column() == 0) { // If the Wiki column was clicked
+                QString cardNum = tableModel->data(tableModel->index(index.row(), 1)).toString();
+                if (!cardNum.isEmpty()) {
+                    QDesktopServices::openUrl(QUrl("https://yugipedia.com/wiki/" + cardNum));
+                }
+            }
+        });
     }
 
-    // --- NEW: Executes the sorting logic ---
     void openSortOptions() {
         SortOptionsDialog dialog(this);
         if (dialog.exec() == QDialog::Accepted) {
@@ -492,20 +531,17 @@ private:
 
             if (col.isEmpty()) continue;
 
-            // Mathematical check to force "?" to behave nicely, while sorting raw numbers correctly
             if (field == "ATK" || field == "DEF" || field == "Level/Rank/Link" || field == "Pendulum Scale") {
                 clauses.append(QString("CASE WHEN %1 = '?' THEN 1 ELSE 0 END %2, CAST(%1 AS INTEGER) %2").arg(col).arg(sqlOrder));
             } else if (field == "Qty") {
                 clauses.append(QString("%1 %2").arg(col).arg(sqlOrder)); 
             } else {
-                // COLLATE NOCASE ensures "Blue-Eyes" and "blue-eyes" are sorted perfectly together
                 clauses.append(QString("%1 COLLATE NOCASE %2").arg(col).arg(sqlOrder));
             }
         }
 
-        // SQL Injection Hack: By applying ORDER BY to the setFilter, it bypasses Qt's single-column restriction!
         if (clauses.isEmpty()) {
-            tableModel->setFilter(""); // Clears rules if everything is "None"
+            tableModel->setFilter(""); 
         } else {
             tableModel->setFilter("1=1 ORDER BY " + clauses.join(", "));
         }
