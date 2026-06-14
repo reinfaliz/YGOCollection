@@ -225,8 +225,7 @@
         statusLabel.style.color = "blue";
         currentCardNumber = inputStr;
 
-        // Native API request with origin=*
-        const apiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${inputStr}&origin=*`;
+        const apiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${inputStr}`;
 
         try {
             const response = await fetch(apiUrl);
