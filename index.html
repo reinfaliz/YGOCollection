@@ -116,7 +116,7 @@
         <input type="file" id="csvUpload" accept=".csv" style="display: none;" onchange="importCSV(event)">
         <button onclick="exportCSV()">📤 Export to CSV</button>
         <div style="flex-grow: 1;"></div>
-        <button class="btn-sync" onclick="alert('Batch updating currently requires a server environment to bypass mass-CORS logic, but works flawlessly in C++!')">🔄 Update Card Names</button>
+        <button class="btn-sync" onclick="startSmartSync()">🔄 Update Card Names</button>
         <button class="btn-sort" onclick="openSortModal()">⚙️ Sort Options</button>
     </div>
 
@@ -132,7 +132,7 @@
         <select id="rarityCombo" disabled></select>
         <label>Qty:</label>
         <input type="number" id="quantitySpinBox" min="1" value="1" disabled onkeypress="handleEnter(event, 'save')">
-        <button id="addBtn" onclick="saveCardToDatabase()" disabled>Add to Collection</button>
+        <button id="addBtn" onclick="" disabled>Add to Collection</button>
     </div>
 
     <div class="table-wrapper">
@@ -203,7 +203,7 @@
     function handleEnter(e, action) {
         if (e.key === 'Enter') {
             if (action === 'search') searchCard();
-            if (action === 'save' && !document.getElementById('addBtn').disabled) saveCardToDatabase();
+            if (action === 'save' && !document.getElementById('addBtn').disabled) ;
         }
     }
 
@@ -410,6 +410,131 @@
         else if (d["Attribute"] || d["ATK"] || d["DEF"] || d["Monster Type"]) d["Card Type"] = "Monster";
 
         return d;
+    }
+
+    // --- BATCH SYNC: Update Card Names ---
+    async function startSmartSync() {
+        // Find unique cards that are unofficial
+        const unofficialCards = collection.filter(c => c["Is Official"] === 0);
+        
+        // Extract unique card numbers to avoid checking the same card multiple times
+        const uniqueUnofficialNumbers = [...new Set(unofficialCards.map(c => c["Card Number"]))];
+
+        if (uniqueUnofficialNumbers.length === 0) {
+            alert("Your database is completely up to date!\n\nNo unofficial card names were found.");
+            return;
+        }
+
+        document.querySelector('.btn-sync').disabled = true;
+        let updatedCount = 0;
+
+        // Create batches of 20 (Safe length for proxy URLs)
+        const batches = [];
+        for (let i = 0; i < uniqueUnofficialNumbers.length; i += 20) {
+            batches.push(uniqueUnofficialNumbers.slice(i, i + 20));
+        }
+
+        for (let i = 0; i < batches.length; i++) {
+            const batch = batches[i];
+            statusLabel.textContent = `Syncing batch ${i + 1} of ${batches.length}...`;
+            statusLabel.style.color = "blue";
+
+            const titlesJoined = batch.join("|");
+            const rawApiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${encodeURIComponent(titlesJoined)}`;
+
+            // Proxy Waterfall to bypass Cloudflare
+            const proxies = [
+                `https://corsproxy.io/?${encodeURIComponent(rawApiUrl)}`,
+                `https://api.allorigins.win/get?url=${encodeURIComponent(rawApiUrl)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawApiUrl)}`
+            ];
+
+            let data = null;
+            for (let proxy of proxies) {
+                try {
+                    const response = await fetch(proxy);
+                    if (!response.ok) continue; 
+                    
+                    let json = await response.json();
+                    if (json.contents) {
+                        try { json = JSON.parse(json.contents); } catch (e) { continue; }
+                    }
+                    
+                    if (json && json.query) {
+                        data = json;
+                        break; 
+                    }
+                } catch (error) { console.log("Proxy fallback..."); }
+            }
+
+            if (data && data.query) {
+                // Map redirects back to original search numbers
+                const nameToNumberMap = {};
+                batch.forEach(num => nameToNumberMap[num] = num);
+                
+                if (data.query.redirects) {
+                    data.query.redirects.forEach(red => {
+                        nameToNumberMap[red.to] = red.from;
+                    });
+                }
+
+                const pages = data.query.pages;
+                for (const key in pages) {
+                    if (key === "-1") continue;
+
+                    const pageObj = pages[key];
+                    const newTitle = pageObj.title;
+                    const wikitext = pageObj.revisions[0]['*'] || pageObj.revisions[0].slots.main['*'];
+
+                    if (wikitext) {
+                        const parsedData = parseWikitext(wikitext, newTitle);
+                        
+                        // If it is now official, update all rows in the collection with this number
+                        if (parsedData["Is Official"] === 1) {
+                            const targetNumber = nameToNumberMap[newTitle];
+                            if (targetNumber) {
+                                let batchUpdated = false;
+                                collection.forEach(c => {
+                                    if (c["Card Number"] === targetNumber) {
+                                        c["Card Name"] = parsedData["Card Name"];
+                                        c["Is Official"] = 1;
+                                        c["Card Type"] = parsedData["Card Type"];
+                                        c["Spell/Trap Property"] = parsedData["Spell/Trap Property"];
+                                        c["Monster Category"] = parsedData["Monster Category"];
+                                        c["Monster Type"] = parsedData["Monster Type"];
+                                        c["Attribute"] = parsedData["Attribute"];
+                                        c["Level/Rank/Link"] = parsedData["Level/Rank/Link"];
+                                        c["Pendulum Scale"] = parsedData["Pendulum Scale"];
+                                        c["ATK"] = parsedData["ATK"];
+                                        c["DEF"] = parsedData["DEF"];
+                                        batchUpdated = true;
+                                    }
+                                });
+                                if (batchUpdated) updatedCount++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1-Second Cooldown before hitting the proxy with the next batch
+            if (i < batches.length - 1) {
+                statusLabel.textContent = `Cooldown: Waiting for next batch...`;
+                statusLabel.style.color = "orange";
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        renderTable();
+        document.querySelector('.btn-sync').disabled = false;
+
+        if (updatedCount > 0) {
+            statusLabel.textContent = `Update Complete! ${updatedCount} total card name(s) officially updated.`;
+            statusLabel.style.color = "green";
+        } else {
+            statusLabel.textContent = "Update Complete. Pending cards are still waiting for official release.";
+            statusLabel.style.color = "black";
+        }
     }
 
     // --- Array Data Management ---
