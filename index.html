@@ -106,6 +106,16 @@
         .sort-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center;}
         .sort-row select { flex-grow: 1; }
         .sort-row label { width: 80px; font-size: 0.9em; font-weight: bold; color: #555;}
+        .wiki-link {
+            text-decoration: none;
+            font-size: 1.2em;
+            cursor: pointer;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+        .wiki-link:hover {
+            transform: scale(1.2);
+        }
     </style>
 </head>
 <body>
@@ -139,6 +149,7 @@
         <table id="collectionTable">
             <thead>
                 <tr>
+                    <th>Wiki</th>
                     <th>Card Number</th>
                     <th>Card Name</th>
                     <th>Rarity</th>
@@ -586,6 +597,9 @@
             tr.onclick = () => toggleRowSelection(tr, index);
             
             tr.innerHTML = `
+                <td style="text-align: center;">
+                    <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" class="wiki-link" title="View on Yugipedia">📖</a>
+                </td>
                 <td>${card["Card Number"] || ""}</td>
                 <td>${card["Card Name"] || ""}</td>
                 <td>${card["Rarity"] || ""}</td>
