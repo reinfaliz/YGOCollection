@@ -588,7 +588,7 @@
                 "Quantity": qty,
                 ...currentCardDetails
             };
-            collection.push(newCard);
+            collection.unshift(newCard);
             statusLabel.textContent = "New card added successfully!";
         }
 
