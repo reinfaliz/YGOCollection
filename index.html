@@ -622,19 +622,19 @@
                 <td style="text-align: center;">
                     <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" class="wiki-link" title="View on Yugipedia">📖</a>
                 </td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')">${card["Card Number"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Name')">${card["Card Name"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Rarity')">${card["Rarity"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Quantity')">${card["Quantity"] || 0}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Type')">${card["Card Type"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Spell/Trap Property')">${card["Spell/Trap Property"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Category')">${card["Monster Category"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Type')">${card["Monster Type"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Attribute')">${card["Attribute"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Level/Rank/Link')">${card["Level/Rank/Link"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Pendulum Scale')">${card["Pendulum Scale"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'ATK')">${card["ATK"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'DEF')">${card["DEF"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')" onkeydown="handleEditKey(event, this)">${card["Card Number"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Name')" onkeydown="handleEditKey(event, this)">${card["Card Name"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Rarity')" onkeydown="handleEditKey(event, this)">${card["Rarity"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Quantity')" onkeydown="handleEditKey(event, this)">${card["Quantity"] || 0}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Type')" onkeydown="handleEditKey(event, this)">${card["Card Type"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Spell/Trap Property')" onkeydown="handleEditKey(event, this)">${card["Spell/Trap Property"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Category')" onkeydown="handleEditKey(event, this)">${card["Monster Category"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Type')" onkeydown="handleEditKey(event, this)">${card["Monster Type"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Attribute')" onkeydown="handleEditKey(event, this)">${card["Attribute"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Level/Rank/Link')" onkeydown="handleEditKey(event, this)">${card["Level/Rank/Link"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Pendulum Scale')" onkeydown="handleEditKey(event, this)">${card["Pendulum Scale"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'ATK')" onkeydown="handleEditKey(event, this)">${card["ATK"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'DEF')" onkeydown="handleEditKey(event, this)">${card["DEF"] || ""}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -676,6 +676,14 @@
                     rowElement.classList.add('selected');
                 }
             }, 200);
+        }
+    }
+
+    // --- Prevent Newlines on Enter ---
+    function handleEditKey(event, cell) {
+        if (event.key === 'Enter') {
+            event.preventDefault(); // Stop the browser from inserting a newline
+            cell.blur();            // Remove focus, which instantly triggers finishEdit()
         }
     }
 
