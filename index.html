@@ -82,6 +82,22 @@
         }
         tr:hover { background-color: #f1f1f1; cursor: pointer; }
         tr.selected { background-color: #cce5ff; }
+        
+        /* Inline Editing Styling */
+        td[contenteditable="true"] {
+            outline: none;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+        }
+        td[contenteditable="true"]:hover {
+            background-color: #e2e6ea;
+            cursor: text;
+            box-shadow: inset 0 0 0 1px #adb5bd;
+        }
+        td[contenteditable="true"]:focus {
+            background-color: #fff;
+            box-shadow: inset 0 0 0 2px #007bff;
+        }
 
         /* Modal Styling */
         .modal-overlay {
@@ -600,22 +616,40 @@
                 <td style="text-align: center;">
                     <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" class="wiki-link" title="View on Yugipedia">📖</a>
                 </td>
-                <td>${card["Card Number"] || ""}</td>
-                <td>${card["Card Name"] || ""}</td>
-                <td>${card["Rarity"] || ""}</td>
-                <td>${card["Quantity"] || 0}</td>
-                <td>${card["Card Type"] || ""}</td>
-                <td>${card["Spell/Trap Property"] || ""}</td>
-                <td>${card["Monster Category"] || ""}</td>
-                <td>${card["Monster Type"] || ""}</td>
-                <td>${card["Attribute"] || ""}</td>
-                <td>${card["Level/Rank/Link"] || ""}</td>
-                <td>${card["Pendulum Scale"] || ""}</td>
-                <td>${card["ATK"] || ""}</td>
-                <td>${card["DEF"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Card Number', this.innerText)">${card["Card Number"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Card Name', this.innerText)">${card["Card Name"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Rarity', this.innerText)">${card["Rarity"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Quantity', this.innerText)">${card["Quantity"] || 0}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Card Type', this.innerText)">${card["Card Type"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Spell/Trap Property', this.innerText)">${card["Spell/Trap Property"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Monster Category', this.innerText)">${card["Monster Category"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Monster Type', this.innerText)">${card["Monster Type"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Attribute', this.innerText)">${card["Attribute"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Level/Rank/Link', this.innerText)">${card["Level/Rank/Link"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Pendulum Scale', this.innerText)">${card["Pendulum Scale"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'ATK', this.innerText)">${card["ATK"] || ""}</td>
+                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'DEF', this.innerText)">${card["DEF"] || ""}</td>
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    // --- Inline Edit Saver ---
+    function updateCellData(index, key, newValue) {
+        // Clean up any weird line breaks the user might have accidentally pasted
+        newValue = newValue.trim().replace(/\n/g, "");
+
+        // If editing Quantity, force it back into an integer so math doesn't break
+        if (key === "Quantity") {
+            newValue = parseInt(newValue) || 1; 
+        }
+
+        // Update the array in the background
+        collection[index][key] = newValue;
+
+        // Give the user a visual confirmation
+        statusLabel.textContent = "Edit saved to memory. Remember to export to CSV when finished!";
+        statusLabel.style.color = "#856404"; // A nice warning yellow/brown
     }
 
     function toggleRowSelection(rowElement, index) {
