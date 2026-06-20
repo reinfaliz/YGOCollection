@@ -84,19 +84,20 @@
         tr.selected { background-color: #cce5ff; }
         
         /* Inline Editing Styling */
-        td[contenteditable="true"] {
+        .editable-cell {
             outline: none;
             border-radius: 3px;
             transition: all 0.2s ease;
         }
-        td[contenteditable="true"]:hover {
+        .editable-cell:hover {
             background-color: #e2e6ea;
-            cursor: text;
+            cursor: pointer;
             box-shadow: inset 0 0 0 1px #adb5bd;
         }
-        td[contenteditable="true"]:focus {
+        .editable-cell[contenteditable="true"] {
             background-color: #fff;
             box-shadow: inset 0 0 0 2px #007bff;
+            cursor: text;
         }
 
         /* Modal Styling */
@@ -610,25 +611,30 @@
 
         collection.forEach((card, index) => {
             let tr = document.createElement('tr');
-            tr.onclick = () => toggleRowSelection(tr, index);
+            
+            // The row handles the single-click timing
+            tr.onclick = (event) => handleRowClick(tr, index, event);
+            
+            // If this row was already selected, keep it highlighted when re-rendering
+            if (selectedRows.has(index)) tr.classList.add('selected');
             
             tr.innerHTML = `
                 <td style="text-align: center;">
                     <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" class="wiki-link" title="View on Yugipedia">📖</a>
                 </td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Card Number', this.innerText)">${card["Card Number"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Card Name', this.innerText)">${card["Card Name"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Rarity', this.innerText)">${card["Rarity"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Quantity', this.innerText)">${card["Quantity"] || 0}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Card Type', this.innerText)">${card["Card Type"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Spell/Trap Property', this.innerText)">${card["Spell/Trap Property"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Monster Category', this.innerText)">${card["Monster Category"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Monster Type', this.innerText)">${card["Monster Type"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Attribute', this.innerText)">${card["Attribute"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Level/Rank/Link', this.innerText)">${card["Level/Rank/Link"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'Pendulum Scale', this.innerText)">${card["Pendulum Scale"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'ATK', this.innerText)">${card["ATK"] || ""}</td>
-                <td contenteditable="true" onclick="event.stopPropagation()" onblur="updateCellData(${index}, 'DEF', this.innerText)">${card["DEF"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')">${card["Card Number"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Name')">${card["Card Name"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Rarity')">${card["Rarity"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Quantity')">${card["Quantity"] || 0}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Type')">${card["Card Type"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Spell/Trap Property')">${card["Spell/Trap Property"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Category')">${card["Monster Category"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Type')">${card["Monster Type"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Attribute')">${card["Attribute"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Level/Rank/Link')">${card["Level/Rank/Link"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Pendulum Scale')">${card["Pendulum Scale"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'ATK')">${card["ATK"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'DEF')">${card["DEF"] || ""}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -652,14 +658,45 @@
         statusLabel.style.color = "#856404"; // A nice warning yellow/brown
     }
 
-    function toggleRowSelection(rowElement, index) {
-        if (selectedRows.has(index)) {
-            selectedRows.delete(index);
-            rowElement.classList.remove('selected');
-        } else {
-            selectedRows.add(index);
-            rowElement.classList.add('selected');
+    // --- Row Selection & Edit Timing Logic ---
+    let rowClickTimer = null;
+
+    function handleRowClick(rowElement, index, event) {
+        // Ignore the click if clicking the Wiki link, or if already actively typing
+        if (event.target.tagName === 'A' || event.target.isContentEditable) return;
+
+        // If it's a single click, start a 200ms timer before selecting the row
+        if (event.detail === 1) {
+            rowClickTimer = setTimeout(() => {
+                if (selectedRows.has(index)) {
+                    selectedRows.delete(index);
+                    rowElement.classList.remove('selected');
+                } else {
+                    selectedRows.add(index);
+                    rowElement.classList.add('selected');
+                }
+            }, 200);
         }
+    }
+
+    function makeEditable(cell, event) {
+        // Cancel the row selection! It was a double-click!
+        clearTimeout(rowClickTimer);
+        
+        // Turn on editing and focus the cell
+        cell.contentEditable = "true";
+        cell.focus();
+        
+        // Automatically highlight all existing text for easy typing
+        document.execCommand('selectAll', false, null);
+    }
+
+    function finishEdit(cell, index, key) {
+        // Turn off editing mode
+        cell.contentEditable = "false";
+        
+        // Save the data to the array (using your existing updateCellData function)
+        updateCellData(index, key, cell.innerText);
     }
 
     function deleteSelected() {
