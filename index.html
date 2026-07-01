@@ -166,7 +166,6 @@
         <div style="flex-grow: 1;"></div>
         <button class="btn-sync" onclick="startSmartSync()">🔄 Update Card Names</button>
         <button style="background-color: #e2e3e5; border-color: #d6d8db;" onclick="stackCards()">🗜️ Stack Cards</button>
-        <button style="background-color: #cce5ff; border-color: #b8daff;" onclick="openPhysicalSortModal()">🤲 Physically Sort</button>
         <button class="btn-sort" onclick="openSortModal()">⚙️ Sort Options</button>
     </div>
 
@@ -218,6 +217,7 @@
             </div>
         <div class="modal-footer">
             <button onclick="closeSortModal()">Cancel</button>
+            <button style="background-color: #cce5ff; border-color: #b8daff; color: #004085; font-weight: bold;" onclick="openPhysicalSortModal()">🤲 Physically Sort</button>
             <button class="btn-apply" onclick="applyAndSort()">Apply & Sort</button>
         </div>
     </div>
@@ -942,16 +942,29 @@
         document.getElementById('sortModal').style.display = 'none';
     }
 
+    // Helper function to read the current dropdown UI
+    function getSortSettingsFromUI() {
+        let settings = [];
+        for (let i = 0; i < 13; i++) {
+            settings.push({
+                field: document.getElementById(`sortField_${i}`).value,
+                order: document.getElementById(`sortOrder_${i}`).value
+            });
+        }
+        return settings;
+    }
+
     function applyAndSort() {
         if (!confirm("Have you finished your physical sort?\n\nThis will permanently reorder the digital list and cannot be undone.")) {
             return;
         }
         
-        let settings = JSON.parse(localStorage.getItem('ygoSortSettings')) || [];
+        // Grab settings from UI and save to local storage
+        let settings = getSortSettingsFromUI();
         localStorage.setItem('ygoSortSettings', JSON.stringify(settings));
         closeSortModal();
         
-        performDigitalSort(collection, settings); // Offloaded the actual math to a helper
+        performDigitalSort(collection, settings);
         renderTable();
         statusLabel.textContent = "Collection sorted successfully.";
         statusLabel.style.color = "green";
@@ -1016,15 +1029,14 @@
             alert("Your collection is empty."); return;
         }
 
-        // 1. Assign temporary invisible IDs so we can track exact physical objects 
-        // regardless of duplicate names or numbers.
+        // 1. Assign temporary invisible IDs so we can track exact physical objects
         collection.forEach((c, i) => c._tempId = i);
         
         physicalQueue = [...collection];
         sortedClone = [...collection];
         
-        // 2. Sort the clone using the user's saved settings
-        let settings = JSON.parse(localStorage.getItem('ygoSortSettings')) || [];
+        // 2. Sort the clone using the current dropdown UI settings!
+        let settings = getSortSettingsFromUI();
         performDigitalSort(sortedClone, settings);
 
         // 3. Reset the virtual hand state
@@ -1034,6 +1046,8 @@
         // 4. Attach keyboard listener for the Spacebar
         document.addEventListener('keydown', spacebarHandler);
 
+        // 5. Swap the Modals
+        closeSortModal();
         renderPhysicalSortUI();
         document.getElementById('physicalSortModal').style.display = 'flex';
     }
