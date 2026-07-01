@@ -120,6 +120,27 @@
         .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; }
         .modal-body { overflow-y: auto; flex-grow: 1; margin-bottom: 15px; padding-right: 10px;}
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+        /* Physical Sort UI Styling */
+        .queue-item {
+            padding: 8px; border-radius: 4px; border: 1px solid #ddd;
+            background: #f8f9fa; color: #6c757d; font-size: 0.9em;
+        }
+        .queue-item.done { opacity: 0.4; }
+        .queue-item.active {
+            background: #cce5ff; border-color: #b8daff; color: #004085;
+            font-weight: bold; border-left: 4px solid #0056b3;
+        }
+        .viewport-card {
+            padding: 15px; border-radius: 6px; border: 2px dashed #ccc;
+            text-align: center; background: #fff;
+        }
+        .viewport-card.target {
+            border: 2px solid #28a745; background: #d4edda; color: #155724;
+            transform: scale(1.05); font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .viewport-card.placeholder {
+            border-style: dotted; background: #f8f9fa; color: #adb5bd; font-style: italic;
+        }
         .sort-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center;}
         .sort-row select { flex-grow: 1; }
         .sort-row label { width: 80px; font-size: 0.9em; font-weight: bold; color: #555;}
@@ -144,6 +165,8 @@
         <button onclick="exportCSV()">📤 Export to CSV</button>
         <div style="flex-grow: 1;"></div>
         <button class="btn-sync" onclick="startSmartSync()">🔄 Update Card Names</button>
+        <button style="background-color: #e2e3e5; border-color: #d6d8db;" onclick="stackCards()">🗜️ Stack Cards</button>
+        <button style="background-color: #cce5ff; border-color: #b8daff;" onclick="openPhysicalSortModal()">🤲 Physically Sort</button>
         <button class="btn-sort" onclick="openSortModal()">⚙️ Sort Options</button>
     </div>
 
@@ -197,6 +220,35 @@
             <button onclick="closeSortModal()">Cancel</button>
             <button class="btn-apply" onclick="applyAndSort()">Apply & Sort</button>
         </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="physicalSortModal">
+    <div class="modal-content" style="width: 800px; flex-direction: row; gap: 20px; height: 60vh;">
+        
+        <div style="flex: 1; display: flex; flex-direction: column; border-right: 2px solid #eee; padding-right: 15px;">
+            <div class="modal-header" style="margin-bottom: 5px;">Unsorted Deck (Desk)</div>
+            <div style="font-size: 0.85em; color: gray; margin-bottom: 15px;">Pull from the top of your physical deck.</div>
+            <div id="physicalQueueContainer" style="overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 5px;">
+                </div>
+        </div>
+
+        <div style="flex: 1; display: flex; flex-direction: column; padding-left: 5px;">
+            <div class="modal-header" style="margin-bottom: 5px;">Virtual Hand Insertion</div>
+            <div style="font-size: 0.85em; color: gray; margin-bottom: 15px;">Slide the card between these neighbors.</div>
+            
+            <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; gap: 15px;" id="viewportContainer">
+                </div>
+
+            <div class="modal-footer" style="margin-top: 20px; justify-content: space-between;">
+                <span style="color: gray; font-size: 0.9em; align-self: center;">Press <b>[Spacebar]</b> to advance</span>
+                <div>
+                    <button onclick="closePhysicalSortModal()">Close</button>
+                    <button class="btn-apply" onclick="advancePhysicalSort()">Next Card ➡️</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 
@@ -891,61 +943,196 @@
     }
 
     function applyAndSort() {
-        let settings = [];
-        for (let i = 0; i < 13; i++) {
-            settings.push({
-                field: document.getElementById(`sortField_${i}`).value,
-                order: document.getElementById(`sortOrder_${i}`).value
-            });
+        if (!confirm("Have you finished your physical sort?\n\nThis will permanently reorder the digital list and cannot be undone.")) {
+            return;
         }
-        // Persist to Local Storage
+        
+        let settings = JSON.parse(localStorage.getItem('ygoSortSettings')) || [];
         localStorage.setItem('ygoSortSettings', JSON.stringify(settings));
         closeSortModal();
+        
+        performDigitalSort(collection, settings); // Offloaded the actual math to a helper
+        renderTable();
+        statusLabel.textContent = "Collection sorted successfully.";
+        statusLabel.style.color = "green";
+    }
 
-        // Perform the Multi-Level Sort
-        collection.sort((a, b) => {
+    // Helper to keep the math reusable for the Virtual Hand
+    function performDigitalSort(targetArray, settings) {
+        targetArray.sort((a, b) => {
             for (let pref of settings) {
                 if (pref.field === "None") continue;
-                
                 let key = fieldMappings[pref.field];
-                let valA = a[key];
-                let valB = b[key];
+                let valA = a[key], valB = b[key];
                 let dir = pref.order === "Ascending" ? 1 : -1;
 
-                // ATK/DEF "?" Math Hack
                 const numericFields = ["ATK", "DEF", "Level/Rank/Link", "Pendulum Scale"];
                 if (numericFields.includes(key)) {
-                    let isQA = String(valA).trim() === "?";
-                    let isQB = String(valB).trim() === "?";
-                    
+                    let isQA = String(valA).trim() === "?", isQB = String(valB).trim() === "?";
                     if (isQA && !isQB) return 1 * dir; 
                     if (!isQA && isQB) return -1 * dir;
-                    
                     if (!isQA && !isQB) {
-                        let numA = parseFloat(valA) || 0;
-                        let numB = parseFloat(valB) || 0;
+                        let numA = parseFloat(valA) || 0, numB = parseFloat(valB) || 0;
                         if (numA !== numB) return (numA - numB) * dir;
                     }
-                } 
-                else if (key === "Quantity") {
-                    let numA = parseInt(valA) || 0;
-                    let numB = parseInt(valB) || 0;
+                } else if (key === "Quantity") {
+                    let numA = parseInt(valA) || 0, numB = parseInt(valB) || 0;
                     if (numA !== numB) return (numA - numB) * dir;
-                } 
-                else {
-                    // String comparison
-                    let strA = String(valA || "").toLowerCase();
-                    let strB = String(valB || "").toLowerCase();
+                } else {
+                    let strA = String(valA || "").toLowerCase(), strB = String(valB || "").toLowerCase();
                     if (strA < strB) return -1 * dir;
                     if (strA > strB) return 1 * dir;
                 }
             }
-            return 0; // If everything matches
+            return 0;
+        });
+    }
+
+    // --- STACK CARDS (Compress Duplicates) ---
+    function stackCards() {
+        let stacked = [];
+        collection.forEach(card => {
+            let existing = stacked.find(c => c["Card Number"] === card["Card Number"] && c["Rarity"] === card["Rarity"]);
+            if (existing) {
+                existing["Quantity"] += card["Quantity"];
+            } else {
+                stacked.push({ ...card });
+            }
+        });
+        collection = stacked;
+        renderTable();
+        statusLabel.textContent = "Collection compressed and identical cards stacked!";
+        statusLabel.style.color = "blue";
+    }
+
+    // --- PHYSICAL SORT ALGORITHM & UI ---
+    let physicalQueue = [];
+    let sortedClone = [];
+    let virtualHand = new Set();
+    let currentPhysicalIndex = 0;
+
+    function openPhysicalSortModal() {
+        if (collection.length === 0) {
+            alert("Your collection is empty."); return;
+        }
+
+        // 1. Assign temporary invisible IDs so we can track exact physical objects 
+        // regardless of duplicate names or numbers.
+        collection.forEach((c, i) => c._tempId = i);
+        
+        physicalQueue = [...collection];
+        sortedClone = [...collection];
+        
+        // 2. Sort the clone using the user's saved settings
+        let settings = JSON.parse(localStorage.getItem('ygoSortSettings')) || [];
+        performDigitalSort(sortedClone, settings);
+
+        // 3. Reset the virtual hand state
+        virtualHand.clear();
+        currentPhysicalIndex = 0;
+        
+        // 4. Attach keyboard listener for the Spacebar
+        document.addEventListener('keydown', spacebarHandler);
+
+        renderPhysicalSortUI();
+        document.getElementById('physicalSortModal').style.display = 'flex';
+    }
+
+    function closePhysicalSortModal() {
+        document.removeEventListener('keydown', spacebarHandler);
+        document.getElementById('physicalSortModal').style.display = 'none';
+    }
+
+    function spacebarHandler(event) {
+        if (event.code === 'Space') {
+            event.preventDefault();
+            advancePhysicalSort();
+        }
+    }
+
+    function advancePhysicalSort() {
+        if (currentPhysicalIndex >= physicalQueue.length) {
+            closePhysicalSortModal();
+            return;
+        }
+        // Mark the active card as physically picked up
+        virtualHand.add(physicalQueue[currentPhysicalIndex]._tempId);
+        currentPhysicalIndex++;
+        renderPhysicalSortUI();
+    }
+
+    function renderPhysicalSortUI() {
+        const queueContainer = document.getElementById('physicalQueueContainer');
+        const viewportContainer = document.getElementById('viewportContainer');
+        
+        // Check if finished
+        if (currentPhysicalIndex >= physicalQueue.length) {
+            queueContainer.innerHTML = "<div class='queue-item active'>🎉 All cards sorted!</div>";
+            viewportContainer.innerHTML = "<div class='viewport-card target'>Sorting Complete!</div>";
+            return;
+        }
+
+        // --- RENDER LEFT PANE (Progress Queue) ---
+        queueContainer.innerHTML = "";
+        physicalQueue.forEach((card, index) => {
+            let div = document.createElement('div');
+            div.className = 'queue-item';
+            if (index < currentPhysicalIndex) div.classList.add('done');
+            else if (index === currentPhysicalIndex) {
+                div.classList.add('active');
+                // Auto-scroll the left pane to keep the active card visible
+                setTimeout(() => div.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+            }
+            div.textContent = `[${card["Card Number"]}] ${card["Card Name"]}`;
+            queueContainer.appendChild(div);
         });
 
-        renderTable();
-        statusLabel.textContent = "Collection sorted successfully.";
-        statusLabel.style.color = "green";
+        // --- RENDER RIGHT PANE (3-Card Viewport) ---
+        let activeCard = physicalQueue[currentPhysicalIndex];
+        
+        // Find where this specific card lives in the final sorted timeline
+        let finalIdx = sortedClone.findIndex(c => c._tempId === activeCard._tempId);
+
+        // Look upwards in the sorted timeline for the nearest card that is CURRENTLY in our hand
+        let neighborAbove = null;
+        for (let i = finalIdx - 1; i >= 0; i--) {
+            if (virtualHand.has(sortedClone[i]._tempId)) {
+                neighborAbove = sortedClone[i];
+                break;
+            }
+        }
+
+        // Look downwards in the sorted timeline for the nearest card that is CURRENTLY in our hand
+        let neighborBelow = null;
+        for (let i = finalIdx + 1; i < sortedClone.length; i++) {
+            if (virtualHand.has(sortedClone[i]._tempId)) {
+                neighborBelow = sortedClone[i];
+                break;
+            }
+        }
+
+        // Generate HTML for the 3 slots
+        const makeHtml = (card) => `<div><b>${card["Card Name"]}</b><br><small>[${card["Card Number"]}] - ${card["Rarity"]}</small></div>`;
+
+        let aboveHtml = neighborAbove ? 
+            `<div class='viewport-card'>⬆️ ${makeHtml(neighborAbove)}</div>` : 
+            `<div class='viewport-card placeholder'>[Top of Deck]</div>`;
+            
+        let targetHtml = `<div class='viewport-card target'>👉 ${makeHtml(activeCard)}</div>`;
+        
+        let belowHtml = neighborBelow ? 
+            `<div class='viewport-card'>⬇️ ${makeHtml(neighborBelow)}</div>` : 
+            `<div class='viewport-card placeholder'>[Bottom of Deck]</div>`;
+
+        // Empty Hand Edge Case
+        if (!neighborAbove && !neighborBelow) {
+            viewportContainer.innerHTML = `
+                <div class='viewport-card placeholder'>Your hand is empty.</div>
+                ${targetHtml}
+                <div class='viewport-card placeholder'>Hold this card to start your deck.</div>`;
+        } else {
+            viewportContainer.innerHTML = `${aboveHtml}${targetHtml}${belowHtml}`;
+        }
     }
 
     // Init Modal on Load
