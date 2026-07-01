@@ -181,7 +181,7 @@
         <select id="rarityCombo" disabled></select>
         <label>Qty:</label>
         <input type="number" id="quantitySpinBox" min="1" value="1" disabled onkeypress="handleEnter(event, 'save')">
-        <button id="addBtn" onclick="saveCardToDatabase()" disabled>Add to Collection</button>
+        <button id="addBtn" onclick="" disabled>Add to Collection</button>
     </div>
 
     <div class="table-wrapper">
@@ -283,7 +283,7 @@
     function handleEnter(e, action) {
         if (e.key === 'Enter') {
             if (action === 'search') searchCard();
-            if (action === 'save' && !document.getElementById('addBtn').disabled) saveCardToDatabase();
+            if (action === 'save' && !document.getElementById('addBtn').disabled) ;
         }
     }
 
@@ -622,30 +622,19 @@
         const rarity = document.getElementById('rarityCombo').value;
         const qty = parseInt(document.getElementById('quantitySpinBox').value);
 
-        let existingIndex = collection.findIndex(c => c["Card Number"] === currentCardNumber && c["Rarity"] === rarity);
-
-        if (existingIndex !== -1) {
-            collection[existingIndex]["Quantity"] += qty;
-            
-            // Update other metadata just in case it officially changed
-            Object.keys(currentCardDetails).forEach(k => {
-                collection[existingIndex][k] = currentCardDetails[k];
-            });
-            
-            statusLabel.textContent = `Added +${qty} to existing stack. Total: ${collection[existingIndex]["Quantity"]}`;
-        } else {
-            let newCard = {
-                "Card Number": currentCardNumber,
-                "Rarity": rarity,
-                "Quantity": qty,
-                ...currentCardDetails
-            };
-            collection.unshift(newCard);
-            statusLabel.textContent = "New card added successfully!";
-        }
-
+        // Always create a new entry (No auto-stacking!)
+        let newCard = {
+            "Card Number": currentCardNumber,
+            "Rarity": rarity,
+            "Quantity": qty,
+            ...currentCardDetails
+        };
+        
+        collection.unshift(newCard); // Snap to the top!
+        statusLabel.textContent = "New card added successfully!";
         statusLabel.style.color = "green";
         
+        // Reset UI
         document.getElementById('cardNumberInput').value = "";
         document.getElementById('cardNumberInput').focus();
         document.getElementById('rarityCombo').disabled = true;
@@ -804,26 +793,16 @@
             complete: function(results) {
                 let count = 0;
                 results.data.forEach(row => {
-                    let existingIndex = collection.findIndex(c => c["Card Number"] === row["Card Number"] && c["Rarity"] === row["Rarity"]);
+                    // Handle missing Quantity safely
+                    if(!row["Quantity"] && row["Qty"]) row["Quantity"] = row["Qty"];
+                    else if (!row["Quantity"]) row["Quantity"] = 1;
                     
-                    if (existingIndex !== -1) {
-                        collection[existingIndex]["Quantity"] += (row["Quantity"] || row["Qty"] || 1);
-                        
-                        // Overwrite metadata to ensure merged data stays fresh
-                        Object.keys(row).forEach(k => {
-                            if(k !== "Quantity" && k !== "Qty") collection[existingIndex][k] = row[k];
-                        });
-                    } else {
-                        // Handle missing Quantity safely
-                        if(!row["Quantity"] && row["Qty"]) row["Quantity"] = row["Qty"];
-                        else if (!row["Quantity"]) row["Quantity"] = 1;
-                        
-                        collection.push(row);
-                    }
+                    // Directly push every row without auto-stacking
+                    collection.push(row);
                     count++;
                 });
                 renderTable();
-                statusLabel.textContent = `Successfully imported and merged ${count} cards.`;
+                statusLabel.textContent = `Successfully imported ${count} cards.`;
                 statusLabel.style.color = "green";
                 event.target.value = ""; 
             }
