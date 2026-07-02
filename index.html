@@ -207,7 +207,10 @@
             <tbody id="tableBody"></tbody>
         </table>
     </div>
-    <button class="btn-delete" onclick="deleteSelected()">❌ Delete Selected</button>
+    <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <button class="btn-delete" style="margin-top: 0;" onclick="deleteSelected()">❌ Delete Selected</button>
+        <button class="btn-delete" style="margin-top: 0; background-color: #c9302c; border-color: #ac2925;" onclick="deleteAll()">🗑️ Delete All</button>
+    </div>
 </div>
 
 <div class="modal-overlay" id="sortModal">
@@ -370,7 +373,11 @@
             }
 
             const pageObj = pages[pageKey];
-            const title = pageObj.title;
+            let title = pageObj.title;
+            // Clean Yugipedia disambiguation tags
+            if (title.endsWith(" (card)")) {
+                title = title.replace(" (card)", "");
+            }
             const wikitext = pageObj.revisions[0]['*'] || pageObj.revisions[0].slots.main['*'];
 
             currentCardDetails = parseWikitext(wikitext, title);
@@ -563,7 +570,11 @@
                     if (key === "-1") continue;
 
                     const pageObj = pages[key];
-                    const newTitle = pageObj.title;
+                    let newTitle = pageObj.title;
+                    // Clean Yugipedia disambiguation tags
+                    if (newTitle.endsWith(" (card)")) {
+                        newTitle = newTitle.replace(" (card)", "");
+                    }
                     const wikitext = pageObj.revisions[0]['*'] || pageObj.revisions[0].slots.main['*'];
 
                     if (wikitext) {
@@ -982,8 +993,23 @@
         });
     }
 
+    function deleteAll() {
+        if (collection.length === 0) return;
+        if (confirm("Are you sure you want to completely wipe your ENTIRE collection?\n\nThis cannot be undone!")) {
+            collection = [];
+            renderTable();
+            statusLabel.textContent = "Entire collection deleted.";
+            statusLabel.style.color = "#d9534f";
+        }
+    }
+
     // --- STACK CARDS (Compress Duplicates) ---
     function stackCards() {
+        if (collection.length === 0) return;
+        if (!confirm("Have you finished your physical sort?\n\nThis will permanently stack identical cards and alter the table order. This cannot be undone.")) {
+            return;
+        }
+
         let stacked = [];
         collection.forEach(card => {
             let existing = stacked.find(c => c["Card Number"] === card["Card Number"] && c["Rarity"] === card["Rarity"]);
@@ -1109,17 +1135,17 @@
             }
         }
 
-        // Generate HTML for the 3 slots
-        const makeHtml = (card) => `<div><b>${card["Card Name"]}</b><br><small>[${card["Card Number"]}] - ${card["Rarity"]} (Qty: ${card["Quantity"]})</small></div>`;
+        // Generate HTML for the 3 slots (Toggle Qty visibility)
+        const makeHtml = (card, showQty) => `<div><b>${card["Card Name"]}</b><br><small>[${card["Card Number"]}] - ${card["Rarity"]}${showQty ? ` <br><span style="color:#0056b3; font-weight:bold;">(Qty to Move: ${card["Quantity"]})</span>` : ''}</small></div>`;
 
         let aboveHtml = neighborAbove ? 
-            `<div class='viewport-card'>⬆️ ${makeHtml(neighborAbove)}</div>` : 
+            `<div class='viewport-card'>⬆️ ${makeHtml(neighborAbove, false)}</div>` : 
             `<div class='viewport-card placeholder'>[Top of Deck]</div>`;
             
-        let targetHtml = `<div class='viewport-card target'>👉 ${makeHtml(activeCard)}</div>`;
+        let targetHtml = `<div class='viewport-card target'>👉 ${makeHtml(activeCard, true)}</div>`;
         
         let belowHtml = neighborBelow ? 
-            `<div class='viewport-card'>⬇️ ${makeHtml(neighborBelow)}</div>` : 
+            `<div class='viewport-card'>⬇️ ${makeHtml(neighborBelow, false)}</div>` : 
             `<div class='viewport-card placeholder'>[Bottom of Deck]</div>`;
 
         // Empty Hand Edge Case
