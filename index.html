@@ -857,11 +857,13 @@
             
             let availableOptions = ["None"];
             fieldKeys.forEach(opt => {
-                if (opt !== "None" && (!used.has(opt) || opt === currentVal)) {
+                // Only add to the list if a HIGHER priority hasn't already claimed it
+                if (opt !== "None" && !used.has(opt)) {
                     availableOptions.push(opt);
                 }
             });
 
+            // If this dropdown's current value was claimed by a higher priority, reset it to None
             if (!availableOptions.includes(currentVal)) {
                 currentVal = "None";
             }
@@ -1034,6 +1036,9 @@
     function closePhysicalSortModal() {
         document.removeEventListener('keydown', spacebarHandler);
         document.getElementById('physicalSortModal').style.display = 'none';
+        
+        // Return to the Sort Options window
+        openSortModal();
     }
 
     function spacebarHandler(event) {
@@ -1105,7 +1110,7 @@
         }
 
         // Generate HTML for the 3 slots
-        const makeHtml = (card) => `<div><b>${card["Card Name"]}</b><br><small>[${card["Card Number"]}] - ${card["Rarity"]}</small></div>`;
+        const makeHtml = (card) => `<div><b>${card["Card Name"]}</b><br><small>[${card["Card Number"]}] - ${card["Rarity"]} (Qty: ${card["Quantity"]})</small></div>`;
 
         let aboveHtml = neighborAbove ? 
             `<div class='viewport-card'>⬆️ ${makeHtml(neighborAbove)}</div>` : 
