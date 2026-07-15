@@ -737,7 +737,7 @@
             tr.innerHTML = `
                 <td style="text-align: center; padding: 2px;">
                     <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" title="View on Yugipedia">
-                        <img class="lazy-card-img" data-passcode="${card["Card Password"] || ""}" alt=" " class="card-thumb">
+                        <img class="lazy-card-img card-thumb" data-passcode="${card["Card Password"] || ""}" alt=" ">
                     </a>
                 </td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')" onkeydown="handleEditKey(event, this)">${card["Card Number"] || ""}</td>
