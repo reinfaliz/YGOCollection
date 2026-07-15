@@ -120,6 +120,7 @@
         .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; }
         .modal-body { overflow-y: auto; flex-grow: 1; margin-bottom: 15px; padding-right: 10px;}
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+
         /* Physical Sort UI Styling */
         .queue-item {
             padding: 8px; border-radius: 4px; border: 1px solid #ddd;
@@ -154,6 +155,17 @@
         .wiki-link:hover {
             transform: scale(1.2);
         }
+
+        /* Card Thumbnail Styling */
+        .card-thumb {
+            width: 35px;
+            height: 51px;
+            border-radius: 3px;
+            object-fit: cover;
+            transition: transform 0.2s;
+            background-color: #e9ecef; /* Placeholder color while loading */
+        }
+        .card-thumb:hover { transform: scale(1.5); box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 10; position: relative;}
     </style>
 </head>
 <body>
@@ -174,7 +186,10 @@
         <button id="searchBtn" onclick="searchCard()">Search Yugipedia</button>
     </div>
     
-    <span id="statusLabel">Ready.</span>
+    <div style="display: flex; align-items: center; margin-bottom: 15px; min-height: 51px;">
+        <img id="searchPreviewImg" src="" style="display: none; width: 35px; border-radius: 3px; margin-right: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+        <span id="statusLabel">Ready.</span>
+    </div>
 
     <div class="input-area">
         <label>Rarity:</label>
@@ -202,6 +217,7 @@
                     <th>Pendulum Scale</th>
                     <th>ATK</th>
                     <th>DEF</th>
+                    <th>Card Password</th>
                 </tr>
             </thead>
             <tbody id="tableBody"></tbody>
@@ -278,7 +294,8 @@
         "Level/Rank/Link": "Level/Rank/Link",
         "Pendulum Scale": "Pendulum Scale",
         "ATK": "ATK",
-        "DEF": "DEF"
+        "DEF": "DEF",
+        "Card Password": "Card Password"
     };
     const fieldKeys = Object.keys(fieldMappings);
 
@@ -437,6 +454,18 @@
             statusLabel.textContent = "Data Parsing Error. Unexpected format from API.";
             statusLabel.style.color = "red";
         }
+
+        // Display Image Preview
+        const previewImg = document.getElementById('searchPreviewImg');
+        if (currentCardDetails["Card Password"]) {
+            const cleanPass = parseInt(currentCardDetails["Card Password"]);
+            if (!isNaN(cleanPass)) {
+                previewImg.src = `https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg`;
+                previewImg.style.display = 'block';
+            }
+        } else {
+            previewImg.style.display = 'none'; // Hide if no password exists
+        }
         
         document.getElementById('searchBtn').disabled = false;
     }
@@ -461,6 +490,7 @@
         d["DEF"] = extract(wikitext, "def");
         d["Pendulum Scale"] = extract(wikitext, "pendulum_scale");
         d["Spell/Trap Property"] = extract(wikitext, "property");
+        d["Card Password"] = extract(wikitext, "password");
 
         // Link Arrow calculation logic
         let lvl = extract(wikitext, "level");
@@ -656,6 +686,40 @@
         renderTable();
     }
 
+    // --- Image Lazy Loading & Rate Limiting Engine ---
+    let imageLoadQueue = [];
+
+    // The Engine: Pops one image from the queue every 200ms (5 requests per second)
+    setInterval(() => {
+        if (imageLoadQueue.length > 0) {
+            const task = imageLoadQueue.shift();
+            const cleanPass = parseInt(task.passcode); // Automatically strips leading zeros
+            if (!isNaN(cleanPass)) {
+                task.img.src = `https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg`;
+            } else {
+                task.img.alt = "📖"; // Fallback emoji if no password exists
+                task.img.style.backgroundColor = "transparent";
+            }
+        }
+    }, 200);
+
+    // The Observer: Watches the screen and queues images when they become visible
+    const imageObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const img = entry.target;
+                const passcode = img.getAttribute('data-passcode');
+                
+                // Only queue if it has a passcode and hasn't been queued yet
+                if (!img.dataset.queued) {
+                    img.dataset.queued = "true"; 
+                    imageLoadQueue.push({ img: img, passcode: passcode });
+                    observer.unobserve(img); // Stop watching once queued
+                }
+            }
+        });
+    }, { rootMargin: "100px" }); // Starts loading 100px before it even hits the screen
+
     function renderTable() {
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = "";
@@ -671,8 +735,10 @@
             if (selectedRows.has(index)) tr.classList.add('selected');
             
             tr.innerHTML = `
-                <td style="text-align: center;">
-                    <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" class="wiki-link" title="View on Yugipedia">📖</a>
+                <td style="text-align: center; padding: 2px;">
+                    <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" title="View on Yugipedia">
+                        <img class="lazy-card-img" data-passcode="${card["Card Password"] || ""}" alt=" " class="card-thumb">
+                    </a>
                 </td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')" onkeydown="handleEditKey(event, this)">${card["Card Number"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Name')" onkeydown="handleEditKey(event, this)">${card["Card Name"] || ""}</td>
@@ -687,8 +753,14 @@
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Pendulum Scale')" onkeydown="handleEditKey(event, this)">${card["Pendulum Scale"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'ATK')" onkeydown="handleEditKey(event, this)">${card["ATK"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'DEF')" onkeydown="handleEditKey(event, this)">${card["DEF"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Password')" onkeydown="handleEditKey(event, this)">${card["Card Password"] || ""}</td>
             `;
             tbody.appendChild(tr);
+        });
+
+        // Tell the observer to watch all the newly generated images
+        document.querySelectorAll('.lazy-card-img').forEach(img => {
+            imageObserver.observe(img);
         });
     }
 
@@ -776,7 +848,7 @@
         }
         
         // Ensure column order matches C++ Exporter exactly
-        const columns = ["Card Number", "Card Name", "Rarity", "Quantity", "Is Official", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF"];
+        const columns = ["Card Number", "Card Name", "Rarity", "Quantity", "Is Official", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF", "Card Password"];
         
         const csv = Papa.unparse(collection, { columns: columns });
         
@@ -825,7 +897,7 @@
         const container = document.getElementById('sortRowsContainer');
         container.innerHTML = "";
         
-        for (let i = 0; i < 13; i++) {
+        for (let i = 0; i < 14; i++) {
             let row = document.createElement('div');
             row.className = "sort-row";
             
@@ -852,7 +924,7 @@
         let used = new Set();
         let noneHit = false;
 
-        for (let i = 0; i < 13; i++) {
+        for (let i = 0; i < 14; i++) {
             let fieldSelect = document.getElementById(`sortField_${i}`);
             let orderSelect = document.getElementById(`sortOrder_${i}`);
             let currentVal = fieldSelect.value;
@@ -901,7 +973,7 @@
 
     function loadSortSettings() {
         const savedSettings = JSON.parse(localStorage.getItem('ygoSortSettings')) || [];
-        for (let i = 0; i < 13; i++) {
+        for (let i = 0; i < 14; i++) {
             let fieldSelect = document.getElementById(`sortField_${i}`);
             let orderSelect = document.getElementById(`sortOrder_${i}`);
             
@@ -937,7 +1009,7 @@
     // Helper function to read the current dropdown UI
     function getSortSettingsFromUI() {
         let settings = [];
-        for (let i = 0; i < 13; i++) {
+        for (let i = 0; i < 14; i++) {
             settings.push({
                 field: document.getElementById(`sortField_${i}`).value,
                 order: document.getElementById(`sortOrder_${i}`).value
