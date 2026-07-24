@@ -171,6 +171,17 @@
 <body>
 
 <div class="container">
+    <div class="container">
+        
+    <!-- Editable Collection Title -->
+    <div style="margin-bottom: 15px;">
+        <input type="text" id="collectionNameInput" value="My Collection" 
+            style="font-size: 2em; font-weight: bold; border: none; border-bottom: 2px solid transparent; width: 100%; outline: none; background: transparent; transition: border-color 0.2s; padding: 0; color: #333;" 
+            onfocus="this.style.borderBottom='2px solid #007bff'" 
+            onblur="this.style.borderBottom='2px solid transparent'"
+            title="Click to edit collection name">
+    </div>
+        
     <div class="toolbar">
         <button onclick="document.getElementById('csvUpload').click()">📥 Import from CSV</button>
         <input type="file" id="csvUpload" accept=".csv" style="display: none;" onchange="importCSV(event)">
@@ -856,7 +867,12 @@
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
-        link.setAttribute("download", "YGO_Collection.csv");
+        
+        // Grab the custom name, with a fallback just in case it's blank
+        let colName = document.getElementById('collectionNameInput').value.trim();
+        if (!colName) colName = "Untitled_Collection";
+        link.setAttribute("download", `${colName}.csv`);
+        
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -868,6 +884,10 @@
     function importCSV(event) {
         const file = event.target.files[0];
         if (!file) return;
+
+        // Strip the extension and update the UI title
+        const fileName = file.name.replace(/\.[^/.]+$/, ""); 
+        document.getElementById('collectionNameInput').value = fileName;
 
         Papa.parse(file, {
             header: true,
