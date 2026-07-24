@@ -166,6 +166,48 @@
             background-color: #e9ecef; /* Placeholder color while loading */
         }
         .card-thumb:hover { transform: scale(1.5); box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 10; position: relative;}
+
+        /* --- Dark Mode Styles --- */
+        body.dark-mode {
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        body.dark-mode .container {
+            background-color: #1e1e1e;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        body.dark-mode table, body.dark-mode th, body.dark-mode td {
+            border-color: #444;
+        }
+        body.dark-mode th {
+            background-color: #2c2c2c;
+            color: #fff;
+        }
+        body.dark-mode td {
+            background-color: #1e1e1e;
+        }
+        body.dark-mode input[type="text"], body.dark-mode input[type="number"] {
+            background-color: #2c2c2c;
+            color: #e0e0e0;
+            border-color: #555;
+        }
+        body.dark-mode .modal-content {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+        }
+        body.dark-mode .viewport-card {
+            background-color: #2c2c2c;
+            border-color: #555;
+        }
+        body.dark-mode button {
+            color: #e0e0e0;
+        }
+        body.dark-mode .btn-delete, body.dark-mode button[style*="background-color: #c9302c"] {
+            color: white; /* Keeps delete text white */
+        }
+        body.dark-mode .card-thumb {
+            background-color: #2c2c2c; /* Darker placeholder for loading images */
+        }
     </style>
 </head>
 <body>
@@ -173,13 +215,17 @@
 <div class="container">
     <div class="container">
         
-    <!-- Editable Collection Title -->
-    <div style="margin-bottom: 15px;">
+    <!-- Header: Collection Title & Theme Toggle -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 15px;">
         <input type="text" id="collectionNameInput" value="My Collection" 
-            style="font-size: 2em; font-weight: bold; border: none; border-bottom: 2px solid transparent; width: 100%; outline: none; background: transparent; transition: border-color 0.2s; padding: 0; color: #333;" 
+            style="flex-grow: 1; font-size: 2em; font-weight: bold; border: none; border-bottom: 2px solid transparent; outline: none; background: transparent; transition: border-color 0.2s; padding: 0; color: inherit;" 
             onfocus="this.style.borderBottom='2px solid #007bff'" 
             onblur="this.style.borderBottom='2px solid transparent'"
             title="Click to edit collection name">
+        
+        <button id="themeToggle" onclick="toggleTheme()" 
+            style="background: transparent; border: 1px solid #ccc; border-radius: 5px; font-size: 1.2em; cursor: pointer; padding: 5px 10px; color: inherit; transition: background 0.2s;"
+            title="Toggle Light/Dark Mode">🌙</button>
     </div>
         
     <div class="toolbar">
@@ -293,6 +339,21 @@
     // --- Auto-Save System ---
     function autoSave() {
         localStorage.setItem('ygoCollectionBackup', JSON.stringify(collection));
+    }
+
+    // --- Light / Dark Mode System ---
+    function toggleTheme() {
+        const body = document.body;
+        const btn = document.getElementById('themeToggle');
+        body.classList.toggle('dark-mode');
+        
+        if (body.classList.contains('dark-mode')) {
+            btn.textContent = '☀️';
+            localStorage.setItem('ygoTheme', 'dark');
+        } else {
+            btn.textContent = '🌙';
+            localStorage.setItem('ygoTheme', 'light');
+        }
     }
 
     // Mappings to match the exact CSV headers from the C++ version
@@ -1278,6 +1339,12 @@
     // Init Modal & Auto-Save on Load
     window.onload = () => {
         buildSortModal();
+
+        // Check for saved Theme
+        if (localStorage.getItem('ygoTheme') === 'dark') {
+            document.body.classList.add('dark-mode');
+            document.getElementById('themeToggle').textContent = '☀️';
+        }
         
         // Check for Auto-Save data
         const savedData = localStorage.getItem('ygoCollectionBackup');
