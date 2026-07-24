@@ -290,6 +290,11 @@
     let selectedRows = new Set();
     const statusLabel = document.getElementById('statusLabel');
 
+    // --- Auto-Save System ---
+    function autoSave() {
+        localStorage.setItem('ygoCollectionBackup', JSON.stringify(collection));
+    }
+
     // Mappings to match the exact CSV headers from the C++ version
     const fieldMappings = {
         "None": "none",
@@ -658,6 +663,7 @@
         }
 
         renderTable();
+        autoSave();
         document.querySelector('.btn-sync').disabled = false;
 
         if (updatedCount > 0) {
@@ -695,6 +701,7 @@
         document.getElementById('addBtn').disabled = true;
 
         renderTable();
+        autoSave();
     }
 
     // --- Image Lazy Loading & Rate Limiting Engine ---
@@ -793,6 +800,8 @@
         // Update the array in the background
         collection[index][key] = newValue;
 
+        autoSave();
+
         // Give the user a visual confirmation
         statusLabel.textContent = "Edit saved to memory. Remember to export to CSV when finished!";
         statusLabel.style.color = "#856404"; // A nice warning yellow/brown
@@ -852,6 +861,7 @@
         if (confirm(`Are you sure you want to delete ${selectedRows.size} card(s)?`)) {
             collection = collection.filter((_, index) => !selectedRows.has(index));
             renderTable();
+            autoSave();
             statusLabel.textContent = `Deleted selected cards.`;
             statusLabel.style.color = "#d9534f";
         }
@@ -915,6 +925,7 @@
                     count++;
                 });
                 renderTable();
+                autoSave();
                 statusLabel.textContent = `Successfully imported ${count} cards.`;
                 statusLabel.style.color = "green";
                 event.target.value = ""; 
@@ -1060,6 +1071,7 @@
         
         performDigitalSort(collection, settings);
         renderTable();
+        autoSave();
         statusLabel.textContent = "Collection sorted successfully.";
         statusLabel.style.color = "green";
     }
@@ -1100,6 +1112,7 @@
         if (confirm("Are you sure you want to completely wipe your ENTIRE collection?\n\nThis cannot be undone!")) {
             collection = [];
             renderTable();
+            autoSave();
             statusLabel.textContent = "Entire collection deleted.";
             statusLabel.style.color = "#d9534f";
         }
@@ -1123,6 +1136,7 @@
         });
         collection = stacked;
         renderTable();
+        autoSave();
         statusLabel.textContent = "Collection compressed and identical cards stacked!";
         statusLabel.style.color = "blue";
     }
@@ -1261,9 +1275,25 @@
         }
     }
 
-    // Init Modal on Load
+    // Init Modal & Auto-Save on Load
     window.onload = () => {
         buildSortModal();
+        
+        // Check for Auto-Save data
+        const savedData = localStorage.getItem('ygoCollectionBackup');
+        if (savedData) {
+            try {
+                collection = JSON.parse(savedData);
+                renderTable();
+                
+                if (collection.length > 0) {
+                    statusLabel.textContent = `Session restored! Loaded ${collection.length} cards from auto-save.`;
+                    statusLabel.style.color = "blue";
+                }
+            } catch (error) {
+                console.error("Could not load auto-save data.");
+            }
+        }
     };
 
 </script>
