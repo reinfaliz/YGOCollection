@@ -786,11 +786,12 @@
     setInterval(() => {
         if (imageLoadQueue.length > 0) {
             const task = imageLoadQueue.shift();
-            const cleanPass = parseInt(task.passcode); // Automatically strips leading zeros
+            const cleanPass = parseInt(task.passcode);
             if (!isNaN(cleanPass)) {
                 task.img.src = `https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg`;
+                loadedImageCache.add(cleanPass); // <-- Remember this passcode!
             } else {
-                task.img.alt = "📖"; // Fallback emoji if no password exists
+                task.img.alt = "📖"; 
                 task.img.style.backgroundColor = "transparent";
             }
         }
