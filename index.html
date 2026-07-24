@@ -780,6 +780,7 @@
 
     // --- Image Lazy Loading & Rate Limiting Engine ---
     let imageLoadQueue = [];
+    let loadedImageCache = new Set();
 
     // The Engine: Pops one image from the queue every 200ms (5 requests per second)
     setInterval(() => {
@@ -825,6 +826,14 @@
             
             // If this row was already selected, keep it highlighted when re-rendering
             if (selectedRows.has(index)) tr.classList.add('selected');
+
+            // Check if we already loaded this image in the current session
+            const cleanPass = parseInt(card["Card Password"]);
+            const isCached = !isNaN(cleanPass) && loadedImageCache.has(cleanPass);
+            
+            // If cached, instantly inject the URL and tell the observer to ignore it
+            const srcAttr = isCached ? `src="https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg"` : ``;
+            const queuedAttr = isCached ? `data-queued="true"` : ``;
             
             tr.innerHTML = `
                 <td style="text-align: center; padding: 2px;">
