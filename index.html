@@ -785,6 +785,11 @@
             newValue = parseInt(newValue) || 1; 
         }
 
+        // Force Card Passwords to always maintain 8 digits
+        if (key === "Card Password" && newValue !== "") {
+            newValue = String(newValue).padStart(8, '0');
+        }
+
         // Update the array in the background
         collection[index][key] = newValue;
 
@@ -896,6 +901,11 @@
             complete: function(results) {
                 let count = 0;
                 results.data.forEach(row => {
+                    // Force the password back to an 8-digit string
+                    if (row["Card Password"] !== undefined && row["Card Password"] !== null && row["Card Password"] !== "") {
+                        row["Card Password"] = String(row["Card Password"]).padStart(8, '0');
+                    }
+
                     // Handle missing Quantity safely
                     if(!row["Quantity"] && row["Qty"]) row["Quantity"] = row["Qty"];
                     else if (!row["Quantity"]) row["Quantity"] = 1;
