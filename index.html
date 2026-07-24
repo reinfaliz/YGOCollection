@@ -205,9 +205,21 @@
         body.dark-mode .card-thumb {
             background-color: #2c2c2c; /* Darker placeholder for loading images */
         }
-        body.dark-mode #statusLabel {
-            color: #4fc3f7 !important; /* A bright, easily readable sky blue */
-            font-weight: 500;
+
+        /* Color Variables for Status Label */
+        :root {
+            --status-info: blue;
+            --status-success: green;
+            --status-error: red;
+            --status-edit: #856404; /* Dark Brown */
+            --status-default: black;
+        }
+        body.dark-mode {
+            --status-info: #4fc3f7;    /* Bright Sky Blue */
+            --status-success: #66bb6a; /* Bright Green */
+            --status-error: #ef5350;   /* Bright Red */
+            --status-edit: #ffca28;    /* Bright Yellow */
+            --status-default: #e0e0e0; /* Light Gray */
         }
     </style>
 </head>
@@ -393,14 +405,14 @@
         const regex = /^[A-Z0-9]{2,5}-[A-Z]{0,2}[0-9A-Z]{1,4}$/;
         if (!regex.test(inputStr)) {
             statusLabel.textContent = "Invalid format. Please use AAAA-RR### (e.g., DREV-JP002).";
-            statusLabel.style.color = "red";
+            statusLabel.style.color = "var(--status-error)";
             document.getElementById('cardNumberInput').select();
             return;
         }
 
         document.getElementById('searchBtn').disabled = true;
         statusLabel.textContent = "Searching Yugipedia through proxies...";
-        statusLabel.style.color = "blue";
+        statusLabel.style.color = "var(--status-info)";
         currentCardNumber = inputStr;
 
         // The raw API URL
@@ -443,7 +455,7 @@
 
         if (!success) {
             statusLabel.textContent = "Network Error. Yugipedia's anti-bot system blocked the request.";
-            statusLabel.style.color = "red";
+            statusLabel.style.color = "var(--status-error)";
             document.getElementById('searchBtn').disabled = false;
             return;
         }
@@ -451,7 +463,7 @@
         try {
             if (data.error && data.error.code === "maxlag") {
                 statusLabel.textContent = "Yugipedia servers are busy (maxlag). Please wait a moment.";
-                statusLabel.style.color = "red";
+                statusLabel.style.color = "var(--status-error)";
                 document.getElementById('searchBtn').disabled = false;
                 return;
             }
@@ -461,7 +473,7 @@
 
             if (pageKey === "-1") {
                 statusLabel.textContent = "Invalid card number. Not found on Yugipedia.";
-                statusLabel.style.color = "red";
+                statusLabel.style.color = "var(--status-error)";
                 document.getElementById('cardNumberInput').select();
                 document.getElementById('searchBtn').disabled = false;
                 return;
@@ -505,7 +517,7 @@
                 statusLabel.style.color = "orange";
             } else {
                 statusLabel.textContent = `Card found: ${title}`;
-                statusLabel.style.color = "black";
+                statusLabel.style.color = "var(--status-default)";
             }
 
             // Update UI
@@ -530,7 +542,7 @@
 
         } catch (error) {
             statusLabel.textContent = "Data Parsing Error. Unexpected format from API.";
-            statusLabel.style.color = "red";
+            statusLabel.style.color = "var(--status-error)";
         }
 
         // Display Image Preview
@@ -632,7 +644,7 @@
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
             statusLabel.textContent = `Syncing batch ${i + 1} of ${batches.length}...`;
-            statusLabel.style.color = "blue";
+            statusLabel.style.color = "var(--status-info)";
 
             const titlesJoined = batch.join("|");
             const rawApiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${encodeURIComponent(titlesJoined)}`;
@@ -730,10 +742,10 @@
 
         if (updatedCount > 0) {
             statusLabel.textContent = `Update Complete! ${updatedCount} total card name(s) officially updated.`;
-            statusLabel.style.color = "green";
+            statusLabel.style.color = "var(--status-success)";
         } else {
             statusLabel.textContent = "Update Complete. Pending cards are still waiting for official release.";
-            statusLabel.style.color = "black";
+            statusLabel.style.color = "var(--status-default)";
         }
     }
 
@@ -752,7 +764,7 @@
         
         collection.unshift(newCard); // Snap to the top!
         statusLabel.textContent = "New card added successfully!";
-        statusLabel.style.color = "green";
+        statusLabel.style.color = "var(--status-success)";
         
         // Reset UI
         document.getElementById('cardNumberInput').value = "";
@@ -866,7 +878,7 @@
 
         // Give the user a visual confirmation
         statusLabel.textContent = "Edit saved to memory. Remember to export to CSV when finished!";
-        statusLabel.style.color = "#856404"; // A nice warning yellow/brown
+        statusLabel.style.color = "var(--status-edit)"; // A nice warning yellow/brown
     }
 
     // --- Row Selection & Edit Timing Logic ---
@@ -955,7 +967,7 @@
         document.body.removeChild(link);
 
         statusLabel.textContent = `Successfully exported ${collection.length} cards to CSV.`;
-        statusLabel.style.color = "green";
+        statusLabel.style.color = "var(--status-success)";
     }
 
     function importCSV(event) {
@@ -989,7 +1001,7 @@
                 renderTable();
                 autoSave();
                 statusLabel.textContent = `Successfully imported ${count} cards.`;
-                statusLabel.style.color = "green";
+                statusLabel.style.color = "var(--status-success)";
                 event.target.value = ""; 
             }
         });
@@ -1135,7 +1147,7 @@
         renderTable();
         autoSave();
         statusLabel.textContent = "Collection sorted successfully.";
-        statusLabel.style.color = "green";
+        statusLabel.style.color = "var(--status-success)";
     }
 
     // Helper to keep the math reusable for the Virtual Hand
@@ -1200,7 +1212,7 @@
         renderTable();
         autoSave();
         statusLabel.textContent = "Collection compressed and identical cards stacked!";
-        statusLabel.style.color = "blue";
+        statusLabel.style.color = "var(--status-info)";
     }
 
     // --- PHYSICAL SORT ALGORITHM & UI ---
@@ -1356,7 +1368,7 @@
                 
                 if (collection.length > 0) {
                     statusLabel.textContent = `Session restored! Loaded ${collection.length} cards from auto-save.`;
-                    statusLabel.style.color = "blue";
+                    statusLabel.style.color = "var(--status-info)";
                 }
             } catch (error) {
                 console.error("Could not load auto-save data.");
