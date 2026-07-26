@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Yu-Gi-Oh! Collection Manager</title>
     
+    <!-- PapaParse for CSV -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- Tesseract.js for Client-Side OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <style>
         body {
@@ -252,6 +256,7 @@
     </div>
 
     <div class="search-bar">
+        <button onclick="openScanner()" style="background-color: #6c757d; border-radius: 4px 0 0 4px;" title="Scan Card Number">📷 Scan</button>
         <input type="text" id="cardNumberInput" placeholder="Enter Card Number (e.g., DREV-JP002)" onkeypress="handleEnter(event, 'search')">
         <button id="searchBtn" onclick="searchCard()">Search Yugipedia</button>
     </div>
@@ -309,6 +314,29 @@
             <button style="background-color: #cce5ff; border-color: #b8daff; color: #004085; font-weight: bold;" onclick="openPhysicalSortModal()">🤲 Physically Sort</button>
             <button class="btn-apply" onclick="applyAndSort()">Apply & Sort</button>
         </div>
+    </div>
+</div>
+
+<!-- Camera Scanner Modal -->
+<div class="modal-overlay" id="scannerModal">
+    <div class="modal-content" style="text-align: center; max-width: 500px;">
+        <span class="close-btn" onclick="closeScanner()">&times;</span>
+        <h2>Scan Set Code</h2>
+        <p style="font-size: 0.9em; margin-bottom: 15px;">Align the set code (e.g., LOB-001) exactly inside the red box.</p>
+        
+        <div id="videoContainer" style="position: relative; display: inline-block; width: 100%; max-width: 400px; background: #000; border-radius: 8px; overflow: hidden;">
+            <video id="cameraStream" autoplay playsinline style="width: 100%; display: block;"></video>
+            <!-- Targeting Reticle -->
+            <div id="reticle" style="position: absolute; top: 50%; left: 50%; width: 200px; height: 50px; border: 3px solid red; transform: translate(-50%, -50%); box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); pointer-events: none;"></div>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <button id="captureBtn" onclick="captureAndRead()" style="width: 100%; padding: 12px; font-size: 1.1em;">📸 Capture & Read</button>
+        </div>
+        <p id="scannerStatus" style="margin-top: 10px; font-weight: bold; color: var(--status-info);"></p>
+        
+        <!-- Hidden Canvas for cropping the image before OCR -->
+        <canvas id="captureCanvas" style="display: none;"></canvas>
     </div>
 </div>
 
@@ -1386,6 +1414,114 @@
         }
     };
 
+    // --- Experimental OCR Scanner ---
+    let videoStream = null;
+
+    async function openScanner() {
+        document.getElementById('scannerModal').style.display = 'block';
+        document.getElementById('scannerStatus').textContent = "Initializing camera...";
+        
+        try {
+            // Request the back camera (environment) if available
+            videoStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
+            });
+            const video = document.getElementById('cameraStream');
+            video.srcObject = videoStream;
+            document.getElementById('scannerStatus').textContent = "Ready. Hold steady and ensure good lighting.";
+        } catch (err) {
+            document.getElementById('scannerStatus').textContent = "Camera access denied or unavailable.";
+            document.getElementById('scannerStatus').style.color = "var(--status-error)";
+            console.error(err);
+        }
+    }
+
+    function closeScanner() {
+        document.getElementById('scannerModal').style.display = 'none';
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    async function captureAndRead() {
+        const video = document.getElementById('cameraStream');
+        const canvas = document.getElementById('captureCanvas');
+        const status = document.getElementById('scannerStatus');
+        const btn = document.getElementById('captureBtn');
+
+        if (!videoStream) return;
+
+        btn.disabled = true;
+        status.textContent = "Processing image... (This may take a few seconds)";
+        status.style.color = "var(--status-info)";
+
+        // 1. Calculate the crop area based on the video's actual resolution vs displayed size
+        const displayWidth = video.clientWidth;
+        const displayHeight = video.clientHeight;
+        const scaleX = video.videoWidth / displayWidth;
+        const scaleY = video.videoHeight / displayHeight;
+
+        // Reticle dimensions (hardcoded in HTML as 200x50)
+        const reticleWidth = 200;
+        const reticleHeight = 50;
+        
+        // Calculate crop coordinates on the raw video frame
+        const cropX = (displayWidth / 2 - reticleWidth / 2) * scaleX;
+        const cropY = (displayHeight / 2 - reticleHeight / 2) * scaleY;
+        const cropW = reticleWidth * scaleX;
+        const cropH = reticleHeight * scaleY;
+
+        // 2. Draw only the cropped area to the hidden canvas
+        canvas.width = cropW;
+        canvas.height = cropH;
+        const ctx = canvas.getContext('2d');
+        
+        // Optional: Draw a white background first to help OCR
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+        try {
+            // 3. Send the cropped canvas to Tesseract.js
+            const result = await Tesseract.recognize(canvas, 'eng', {
+                logger: m => console.log(m) // See progress in F12 console
+            });
+
+            const text = result.data.text.trim();
+            console.log("Raw OCR Result:", text);
+
+            // 4. Use Regex to find a Yu-Gi-Oh format string (e.g., LOB-001, DREV-JP002)
+            // Matches 3-4 letters/numbers, a dash, and 3-5 letters/numbers
+            const ygoRegex = /[A-Z0-9]{3,4}\s?-\s?[A-Z0-9]{3,5}/i; 
+            const match = text.match(ygoRegex);
+
+            if (match) {
+                // Clean up any accidental spaces OCR added
+                const finalCode = match[0].replace(/\s/g, '').toUpperCase();
+                
+                status.textContent = `Found: ${finalCode}! Searching...`;
+                status.style.color = "var(--status-success)";
+                
+                // Close scanner and trigger the main app search
+                document.getElementById('cardNumberInput').value = finalCode;
+                setTimeout(() => {
+                    closeScanner();
+                    searchCard();
+                }, 1000);
+            } else {
+                status.textContent = `No Set Code found. Please adjust lighting and try again.`;
+                status.style.color = "var(--status-error)";
+            }
+        } catch (err) {
+            status.textContent = "Error processing image.";
+            status.style.color = "var(--status-error)";
+            console.error(err);
+        } finally {
+            btn.disabled = false;
+        }
+    }
 </script>
 </body>
 </html>
