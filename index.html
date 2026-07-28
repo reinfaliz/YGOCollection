@@ -1350,17 +1350,38 @@
             }
         }
 
-        // Generate HTML for the 3 slots (Toggle Qty visibility)
-        const makeHtml = (card, showQty) => `<div><b>${card["Card Name"]}</b><br><small>[${card["Card Number"]}] - ${card["Rarity"]}${showQty ? ` <br><span style="color:#0056b3; font-weight:bold;">(Qty to Move: ${card["Quantity"]})</span>` : ''}</small></div>`;
-
-        let aboveHtml = neighborAbove ? 
-            `<div class='viewport-card'>⬆️ ${makeHtml(neighborAbove, false)}</div>` : 
-            `<div class='viewport-card placeholder'>[Top of Deck]</div>`;
+        // Generate HTML for the 3 slots (Toggle Qty visibility) with Images
+        const makeHtml = (card, showQty) => {
+            const cleanPass = parseInt(card["Card Password"]);
             
-        let targetHtml = `<div class='viewport-card target'>👉 ${makeHtml(activeCard, true)}</div>`;
-        
+            // Check if we have a valid passcode for the image, otherwise use a placeholder
+            const imgHtml = !isNaN(cleanPass) ? 
+                `<img class="card-thumb" src="https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg" alt=" " style="flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">` : 
+                `<div class="card-thumb" style="display:flex; align-items:center; justify-content:center; flex-shrink:0;">📖</div>`;
+
+            return `
+                ${imgHtml}
+                <div style="text-align: left; line-height: 1.3;">
+                    <b>${card["Card Name"]}</b><br>
+                    <small>[${card["Card Number"]}] - ${card["Rarity"]}${showQty ? ` <br><span style="color: var(--status-info); font-weight:bold;">(Qty to Move: ${card["Quantity"]})</span>` : ''}</small>
+                </div>
+            `;
+        };
+        let aboveHtml = neighborAbove ? 
+            `<div class='viewport-card' style='display: flex; align-items: center; gap: 15px;'>
+                <span style='font-size: 1.5em; flex-shrink: 0;'>⬆️</span> 
+                ${makeHtml(neighborAbove, false)}
+            </div>` : 
+            `<div class='viewport-card placeholder'>[Top of Deck]</div>`;
+        let targetHtml = `<div class='viewport-card target' style='display: flex; align-items: center; gap: 15px;'>
+                <span style='font-size: 1.5em; flex-shrink: 0;'>👉</span> 
+                ${makeHtml(activeCard, true)}
+            </div>`;
         let belowHtml = neighborBelow ? 
-            `<div class='viewport-card'>⬇️ ${makeHtml(neighborBelow, false)}</div>` : 
+            `<div class='viewport-card' style='display: flex; align-items: center; gap: 15px;'>
+                <span style='font-size: 1.5em; flex-shrink: 0;'>⬇️</span> 
+                ${makeHtml(neighborBelow, false)}
+            </div>` : 
             `<div class='viewport-card placeholder'>[Bottom of Deck]</div>`;
 
         // Empty Hand Edge Case
