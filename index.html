@@ -1350,13 +1350,18 @@
             }
         }
 
-        // Generate HTML for the 3 slots (Toggle Qty visibility) with Images
+        // Generate HTML for the 3 slots (Toggle Qty visibility) with Images & Rate Limiting
         const makeHtml = (card, showQty) => {
             const cleanPass = parseInt(card["Card Password"]);
+            const isCached = !isNaN(cleanPass) && loadedImageCache.has(cleanPass);
             
-            // Check if we have a valid passcode for the image, otherwise use a placeholder
+            // If cached, inject instantly. Otherwise, leave blank for the observer.
+            const srcAttr = isCached ? `src="https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg"` : ``;
+            const queuedAttr = isCached ? `data-queued="true"` : ``;
+            
+            // Note the addition of the "lazy-card-img" class and "data-passcode" attribute
             const imgHtml = !isNaN(cleanPass) ? 
-                `<img class="card-thumb" src="https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg" alt=" " style="flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">` : 
+                `<img class="lazy-card-img card-thumb" data-passcode="${card["Card Password"] || ""}" ${srcAttr} ${queuedAttr} alt=" " style="flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">` : 
                 `<div class="card-thumb" style="display:flex; align-items:center; justify-content:center; flex-shrink:0;">📖</div>`;
 
             return `
@@ -1393,6 +1398,13 @@
         } else {
             viewportContainer.innerHTML = `${aboveHtml}${targetHtml}${belowHtml}`;
         }
+
+        // Tell the observer to watch the un-cached images
+        document.getElementById('viewportContainer').querySelectorAll('.lazy-card-img').forEach(img => {
+            if (!img.dataset.queued) {
+                imageObserver.observe(img);
+            }
+        });
     }
 
     // Init Modal & Auto-Save on Load
