@@ -236,6 +236,26 @@
             --status-edit: #ffca28;    /* Bright Yellow */
             --status-default: #e0e0e0; /* Light Gray */
         }
+
+        /* --- Drag & Drop Styles --- */
+        .drag-handle {
+            cursor: grab;
+            color: #aaa;
+            font-size: 1.2em;
+            text-align: center;
+            user-select: none;
+            width: 30px;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+        tr.dragging {
+            opacity: 0.5;
+            background-color: #e9ecef;
+        }
+        body.dark-mode tr.dragging {
+            background-color: #333;
+        }
     </style>
 </head>
 <body>
@@ -293,6 +313,7 @@
         <table id="collectionTable">
             <thead>
                 <tr>
+                    <th style="width: 30px;">↕</th> <!-- New Drag Column -->
                     <th>Wiki</th>
                     <th>Card Number</th>
                     <th>Card Name</th>
@@ -864,7 +885,17 @@
             const srcAttr = isCached ? `src="https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg"` : ``;
             const queuedAttr = isCached ? `data-queued="true"` : ``;
             
+            // Event listeners to the TR (draggable is applied dynamically)
+            tr.ondragstart = (event) => handleDragStart(event, index);
+            tr.ondragover = (event) => handleDragOver(event);
+            tr.ondrop = (event) => handleDrop(event, index);
+            tr.ondragend = (event) => handleDragEnd(event);
+
             tr.innerHTML = `
+                <td class="drag-handle" title="Drag to reorder"
+                    onmousedown="this.parentElement.setAttribute('draggable', 'true')"
+                    onmouseup="this.parentElement.setAttribute('draggable', 'false')"
+                    onmouseleave="this.parentElement.setAttribute('draggable', 'false')">☰</td>
                 <td style="text-align: center; padding: 2px;">
                     <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" title="View on Yugipedia">
                         <img class="lazy-card-img card-thumb" data-passcode="${card["Card Password"] || ""}" ${srcAttr} ${queuedAttr} alt=" ">
@@ -1470,6 +1501,60 @@
         }
     };
 
+    // --- HTML5 Drag & Drop Reordering ---
+    let draggedRowIndex = null;
+
+    function handleDragStart(event, index) {
+        draggedRowIndex = index;
+        event.currentTarget.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        
+        // Required for Firefox to allow dropping
+        event.dataTransfer.setData('text/plain', index);
+    }
+
+    function handleDragOver(event) {
+        event.preventDefault(); // Necessary to allow dropping
+        event.dataTransfer.dropEffect = 'move';
+
+        // Auto-Scroll Logic
+        const wrapper = document.querySelector('.table-wrapper');
+        const rect = wrapper.getBoundingClientRect();
+        const y = event.clientY;
+        const threshold = 60; // How close to the edge (in pixels) before scrolling starts
+
+        if (y < rect.top + threshold) {
+            wrapper.scrollTop -= 15; // Scroll up
+        } else if (y > rect.bottom - threshold) {
+            wrapper.scrollTop += 15; // Scroll down
+        }
+    }
+
+    function handleDrop(event, targetIndex) {
+        event.preventDefault();
+        
+        // If dropped outside a valid row, or on itself, do nothing
+        if (draggedRowIndex === null || draggedRowIndex === targetIndex) return;
+
+        // Splice the dragged item out of the array
+        const draggedItem = collection.splice(draggedRowIndex, 1)[0];
+        
+        // Insert it at the new target index
+        collection.splice(targetIndex, 0, draggedItem);
+
+        // Update the UI and save the new physical order to memory
+        renderTable();
+        autoSave();
+        
+        statusLabel.textContent = "Row reordered successfully.";
+        statusLabel.style.color = "var(--status-info)";
+    }
+
+    function handleDragEnd(event) {
+        event.currentTarget.classList.remove('dragging');
+        event.currentTarget.setAttribute('draggable', 'false'); // Force disable drag mode
+        draggedRowIndex = null;
+    }
 </script>
 </body>
 </html>
