@@ -342,7 +342,7 @@
 
 <div class="modal-overlay" id="sortModal">
     <div class="modal-content">
-        <div class="modal-header">Advanced Sort Options</div>
+        <div class="modal-header">Sort Options</div>
         <div class="modal-body" id="sortRowsContainer">
             </div>
         <div class="modal-footer">
@@ -1076,7 +1076,7 @@
         });
     }
 
-    // --- ADVANCED SORT OPTIONS MODAL ---
+    // --- SORT OPTIONS MODAL ---
     function buildSortModal() {
         const container = document.getElementById('sortRowsContainer');
         container.innerHTML = "";
@@ -1303,6 +1303,7 @@
         
         // 2. Sort the clone using the current dropdown UI settings!
         let settings = getSortSettingsFromUI();
+        localStorage.setItem('ygoSortSettings', JSON.stringify(settings));
         performDigitalSort(sortedClone, settings);
 
         // 3. Reset the virtual hand state
