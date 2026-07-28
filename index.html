@@ -345,10 +345,11 @@
                 </div>
 
             <div class="modal-footer" style="margin-top: 20px; justify-content: space-between;">
-                <span style="color: gray; font-size: 0.9em; align-self: center;">Press <b>[Spacebar]</b> to advance</span>
+                <span style="color: gray; font-size: 0.9em; align-self: center;">Press <b>[Arrows]</b> to navigate</span>
                 <div>
                     <button onclick="closePhysicalSortModal()">Close</button>
-                    <button class="btn-apply" onclick="advancePhysicalSort()">Next Card ➡️</button>
+                    <button onclick="reversePhysicalSort()">⬅️ Back</button>
+                    <button class="btn-apply" onclick="advancePhysicalSort()">Next ➡️</button>
                 </div>
             </div>
         </div>
@@ -1266,7 +1267,7 @@
         currentPhysicalIndex = 0;
         
         // 4. Attach keyboard listener for the Spacebar
-        document.addEventListener('keydown', spacebarHandler);
+        document.addEventListener('keydown', keyboardNavHandler);
 
         // 5. Swap the Modals
         closeSortModal();
@@ -1275,28 +1276,48 @@
     }
 
     function closePhysicalSortModal() {
-        document.removeEventListener('keydown', spacebarHandler);
+        document.removeEventListener('keydown', keyboardNavHandler);
         document.getElementById('physicalSortModal').style.display = 'none';
         
         // Return to the Sort Options window
         openSortModal();
     }
 
-    function spacebarHandler(event) {
-        if (event.code === 'Space') {
+    function keyboardNavHandler(event) {
+        if (event.code === 'ArrowRight' || event.code === 'ArrowDown') {
             event.preventDefault();
             advancePhysicalSort();
+        } else if (event.code === 'ArrowLeft' || event.code === 'ArrowUp') {
+            event.preventDefault();
+            reversePhysicalSort();
         }
     }
 
     function advancePhysicalSort() {
-        if (currentPhysicalIndex >= physicalQueue.length) {
-            closePhysicalSortModal();
-            return;
-        }
+        if (currentPhysicalIndex >= physicalQueue.length) return; // We are at the end
+        
         // Mark the active card as physically picked up
         virtualHand.add(physicalQueue[currentPhysicalIndex]._tempId);
         currentPhysicalIndex++;
+        renderPhysicalSortUI();
+    }
+
+    function reversePhysicalSort() {
+        if (currentPhysicalIndex > 0) {
+            currentPhysicalIndex--;
+            // Remove the card we just stepped back onto from the virtual hand
+            virtualHand.delete(physicalQueue[currentPhysicalIndex]._tempId);
+            renderPhysicalSortUI();
+        }
+    }
+
+    function jumpToPhysicalSort(targetIndex) {
+        // Rebuild the virtual hand perfectly up to the clicked target
+        virtualHand.clear();
+        for (let i = 0; i < targetIndex; i++) {
+            virtualHand.add(physicalQueue[i]._tempId);
+        }
+        currentPhysicalIndex = targetIndex;
         renderPhysicalSortUI();
     }
 
@@ -1316,6 +1337,9 @@
         physicalQueue.forEach((card, index) => {
             let div = document.createElement('div');
             div.className = 'queue-item';
+            div.style.cursor = 'pointer'; // Make it look clickable
+            div.onclick = () => jumpToPhysicalSort(index); // Trigger the jump
+            
             if (index < currentPhysicalIndex) div.classList.add('done');
             else if (index === currentPhysicalIndex) {
                 div.classList.add('active');
