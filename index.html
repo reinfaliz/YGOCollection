@@ -1505,6 +1505,11 @@
     let draggedRowIndex = null;
 
     function handleDragStart(event, index) {
+        // STRICT CHECK: Abort if the drag wasn't started by clicking the ☰ handle
+        if (event.currentTarget.getAttribute('draggable') !== 'true') {
+            return; 
+        }
+
         draggedRowIndex = index;
         event.currentTarget.classList.add('dragging');
         event.dataTransfer.effectAllowed = 'move';
