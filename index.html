@@ -362,16 +362,16 @@
         <div class="modal-body" id="sortRowsContainer">
             </div>
         <div class="modal-footer">
-            <button onclick="closeSortModal()">Cancel</button>
+            <button onclick="closeSortModal()">Close</button>
             <button style="background-color: #cce5ff; border-color: #b8daff; color: #004085; font-weight: bold;" onclick="openPhysicalSortModal()">🤲 Physically Sort</button>
-            <button class="btn-apply" onclick="applyAndSort()">Apply & Sort</button>
+            <button class="btn-apply" onclick="applyAndSort()">Sort</button>
         </div>
     </div>
 </div>
 
 <!-- Custom Sort Rules Modal -->
 <div class="modal-overlay" id="customRulesModal">
-    <div class="modal-content" style="width: 400px;">
+    <div class="modal-content" style="width: 450px;">
         <div class="modal-header">Modify Sorting Rules</div>
         
         <div style="margin-bottom: 15px;">
@@ -387,8 +387,21 @@
             </select>
         </div>
 
-        <div class="modal-body" id="ruleListContainer" style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; padding: 10px; flex-grow: 1; max-height: 40vh; overflow-y: auto;">
-            <!-- Draggable rules will populate here -->
+        <!-- Flex container holding the arrows and the list -->
+        <div style="display: flex; gap: 15px; flex-grow: 1;">
+            
+            <!-- The Directional Indicators -->
+            <div style="display: flex; flex-direction: column; justify-content: space-between; align-items: center; color: gray; font-size: 0.85em; font-weight: bold; text-align: center; padding: 10px 0;">
+                <div style="line-height: 1.2;">Ascending<br><span style="font-size: 1.5em;">⬇️</span></div>
+                <div style="width: 2px; flex-grow: 1; background-color: #ddd; margin: 5px 0; border-radius: 2px;"></div>
+                <div style="line-height: 1.2;"><span style="font-size: 1.5em;">⬆️</span><br>Descending</div>
+            </div>
+
+            <!-- The Draggable List -->
+            <div class="modal-body" id="ruleListContainer" style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; padding: 10px; flex-grow: 1; max-height: 40vh; overflow-y: auto; margin-bottom: 0;">
+                <!-- Draggable rules will populate here -->
+            </div>
+            
         </div>
 
         <div class="modal-footer" style="justify-content: space-between; margin-top: 15px;">
@@ -447,6 +460,11 @@
         "DEF": ["Number", "?"]
     };
     let customSortRules = JSON.parse(localStorage.getItem('ygoCustomSortRules')) || JSON.parse(JSON.stringify(defaultSortRules));
+
+    function saveSortSettings() {
+        let settings = getSortSettingsFromUI();
+        localStorage.setItem('ygoSortSettings', JSON.stringify(settings));
+    }
 
     // --- Auto-Save System ---
     function autoSave() {
@@ -1147,11 +1165,12 @@
             
             let fieldSelect = document.createElement('select');
             fieldSelect.id = `sortField_${i}`;
-            fieldSelect.onchange = updateDropdowns;
+            fieldSelect.onchange = () => { updateDropdowns(); saveSortSettings(); };
             
             let orderSelect = document.createElement('select');
             orderSelect.id = `sortOrder_${i}`;
             orderSelect.innerHTML = `<option value="Ascending">Ascending</option><option value="Descending">Descending</option>`;
+            orderSelect.onchange = saveSortSettings;
             
             row.appendChild(label);
             row.appendChild(fieldSelect);
