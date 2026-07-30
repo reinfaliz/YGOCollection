@@ -320,6 +320,9 @@
             <option value="top">Top</option>
             <option value="bottom">Bottom</option>
         </select>
+        <label style="margin-left: 10px; cursor: pointer;">
+            <input type="checkbox" id="autoScrollCheckbox" onchange="saveAutoScrollSetting()" checked> Auto-Scroll
+        </label>
     </div>
 
     <div class="table-wrapper">
@@ -469,6 +472,12 @@
     // --- Auto-Save System ---
     function autoSave() {
         localStorage.setItem('ygoCollectionBackup', JSON.stringify(collection));
+    }
+
+    // --- Auto-Scroll Setting Save ---
+    function saveAutoScrollSetting() {
+        const isChecked = document.getElementById('autoScrollCheckbox').checked;
+        localStorage.setItem('ygoAutoScroll', isChecked);
     }
 
     // --- Light / Dark Mode System ---
@@ -906,6 +915,21 @@
 
         renderTable();
         autoSave();
+
+        // --- Auto-Scroll Logic ---
+        if (document.getElementById('autoScrollCheckbox').checked) {
+            const wrapper = document.querySelector('.table-wrapper');
+            
+            // A 10ms timeout gives the browser a split second to finish drawing 
+            // the new HTML before we ask it to calculate the new scroll height.
+            setTimeout(() => {
+                if (insertPosition === 'bottom') {
+                    wrapper.scrollTop = wrapper.scrollHeight; // Scroll to bottom
+                } else {
+                    wrapper.scrollTop = 0; // Scroll to top
+                }
+            }, 10);
+        }
     }
 
     // --- Image Lazy Loading & Rate Limiting Engine ---
@@ -1598,6 +1622,12 @@
         if (localStorage.getItem('ygoTheme') === 'dark') {
             document.body.classList.add('dark-mode');
             document.getElementById('themeToggle').textContent = '☀️';
+        }
+
+        // Check for saved Auto-Scroll setting
+        const savedAutoScroll = localStorage.getItem('ygoAutoScroll');
+        if (savedAutoScroll !== null) {
+            document.getElementById('autoScrollCheckbox').checked = (savedAutoScroll === 'true');
         }
         
         // Check for Auto-Save data
