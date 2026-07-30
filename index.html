@@ -314,7 +314,7 @@
     <div class="input-area">
         <label>Rarity:</label>
         <select id="rarityCombo" disabled onkeydown="handleEnter(event, 'focusQty')"></select>
-        <label>Qty:</label>
+        <label>Quantity:</label>
         <input type="number" id="quantitySpinBox" min="1" value="1" disabled onkeypress="handleEnter(event, 'save')" style="width: 60px;">
         <button id="addBtn" onclick="saveCardToDatabase()" disabled>Add to Collection</button>
         <label style="margin-left: 10px;">Add to:</label>
@@ -503,7 +503,7 @@
         "Card Number": "Card Number",
         "Card Name": "Card Name",
         "Rarity": "Rarity",
-        "Qty": "Quantity",
+        "Quantity": "Quantity",
         "Card Type": "Card Type",
         "Spell/Trap Property": "Spell/Trap Property",
         "Monster Category": "Monster Category",
@@ -1167,8 +1167,7 @@
                     }
 
                     // Handle missing Quantity safely
-                    if(!row["Quantity"] && row["Qty"]) row["Quantity"] = row["Qty"];
-                    else if (!row["Quantity"]) row["Quantity"] = 1;
+                    if (!row["Quantity"]) row["Quantity"] = 1;
                     
                     // Directly push every row without auto-stacking
                     collection.push(row);
@@ -1577,7 +1576,7 @@
                 ${imgHtml}
                 <div style="text-align: left; line-height: 1.3;">
                     <b>${card["Card Name"]}</b><br>
-                    <small>[${card["Card Number"]}] - ${card["Rarity"]}${showQty ? ` <br><span style="color: var(--status-info); font-weight:bold;">(Qty to Move: ${card["Quantity"]})</span>` : ''}</small>
+                    <small>[${card["Card Number"]}] - ${card["Rarity"]}${showQty ? ` <br><span style="color: var(--status-info); font-weight:bold;">(Quantity to Move: ${card["Quantity"]})</span>` : ''}</small>
                 </div>
             `;
         };
