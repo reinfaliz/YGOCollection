@@ -941,7 +941,7 @@
     // The Engine: Pops one image from the queue every 200ms (5 requests per second)
     setInterval(() => {
         if (imageLoadQueue.length > 0) {
-            const task = imageLoadQueue.shift();
+            const task = imageLoadQueue.pop();
             const cleanPass = parseInt(task.passcode);
             if (!isNaN(cleanPass)) {
                 task.img.src = `https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg`;
