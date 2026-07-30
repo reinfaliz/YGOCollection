@@ -311,7 +311,7 @@
 
     <div class="input-area">
         <label>Rarity:</label>
-        <select id="rarityCombo" disabled></select>
+        <select id="rarityCombo" disabled onkeydown="handleEnter(event, 'focusQty')"></select>
         <label>Qty:</label>
         <input type="number" id="quantitySpinBox" min="1" value="1" disabled onkeypress="handleEnter(event, 'save')" style="width: 60px;">
         <button id="addBtn" onclick="saveCardToDatabase()" disabled>Add to Collection</button>
@@ -511,6 +511,12 @@
         if (e.key === 'Enter') {
             if (action === 'search') searchCard();
             if (action === 'save' && !document.getElementById('addBtn').disabled) saveCardToDatabase();
+            if (action === 'focusQty') {
+                e.preventDefault(); // Prevents the dropdown from accidentally opening/closing
+                const qtyBox = document.getElementById('quantitySpinBox');
+                qtyBox.focus();
+                qtyBox.select(); // Automatically highlights the "1" so you can type right over it!
+            }
         }
     }
 
