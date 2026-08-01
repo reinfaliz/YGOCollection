@@ -947,40 +947,51 @@
     }
 
     // --- Image Lazy Loading & Rate Limiting Engine ---
-    let imageLoadQueue = [];
+    let activeVisibleImages = new Set();
     let loadedImageCache = new Set();
 
-    // The Engine: Pops one image from the queue every 200ms (5 requests per second)
+    // The Engine: Grabs one visible image every 200ms (5 requests per second)
     setInterval(() => {
-        if (imageLoadQueue.length > 0) {
-            const task = imageLoadQueue.pop();
-            const cleanPass = parseInt(task.passcode);
+        if (activeVisibleImages.size > 0) {
+            // Get one image from the pool of currently visible images
+            const img = activeVisibleImages.values().next().value;
+            activeVisibleImages.delete(img); // Remove it from the waiting pool
+            
+            const passcode = img.getAttribute('data-passcode');
+            const cleanPass = parseInt(passcode);
+            
             if (!isNaN(cleanPass)) {
-                task.img.src = `https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg`;
-                loadedImageCache.add(cleanPass); // <-- Remember this passcode!
+                img.src = `https://images.ygoprodeck.com/images/cards_small/${cleanPass}.jpg`;
+                loadedImageCache.add(cleanPass); 
             } else {
-                task.img.alt = "📖"; 
-                task.img.style.backgroundColor = "transparent";
+                img.alt = "📖"; 
+                img.style.backgroundColor = "transparent";
             }
+            
+            // Mark as processed and stop watching it so it never triggers again
+            img.dataset.queued = "true";
+            imageObserver.unobserve(img);
         }
     }, 200);
 
-    // The Observer: Watches the screen and queues images when they become visible
-    const imageObserver = new IntersectionObserver((entries, observer) => {
+    // The Observer: Manages the active visible pool
+    const imageObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
+            const img = entry.target;
+            
+            // If it was already loaded (or cached via HTML), ignore it
+            if (img.dataset.queued === "true") return;
+
             if (entry.isIntersecting) {
-                const img = entry.target;
-                const passcode = img.getAttribute('data-passcode');
-                
-                // Only queue if it has a passcode and hasn't been queued yet
-                if (!img.dataset.queued) {
-                    img.dataset.queued = "true"; 
-                    imageLoadQueue.push({ img: img, passcode: passcode });
-                    observer.unobserve(img); // Stop watching once queued
-                }
+                // The image entered the viewport! Add it to the loading pool.
+                activeVisibleImages.add(img);
+            } else {
+                // The image left the viewport BEFORE the engine could load it!
+                // Instantly remove it from the pool to abort the API request.
+                activeVisibleImages.delete(img);
             }
         });
-    }, { rootMargin: "100px" }); // Starts loading 100px before it even hits the screen
+    }, { rootMargin: "100px" });
 
     function renderTable() {
         const tbody = document.getElementById('tableBody');
