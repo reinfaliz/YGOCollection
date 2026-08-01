@@ -339,7 +339,7 @@
                     <th>Quantity</th>
                     <th>Card Type</th>
                     <th>Spell/Trap Property</th>
-                    <th>Monster Category</th>
+                    <th>Monster Frame</th>
                     <th>Monster Type</th>
                     <th>Attribute</th>
                     <th>Level/Rank/Link</th>
@@ -384,7 +384,7 @@
             <select id="ruleCategorySelect" style="width: 100%; margin-top: 5px;" onchange="renderRuleList()">
                 <option value="Card Type">Card Type</option>
                 <option value="Spell/Trap Property">Spell/Trap Property</option>
-                <option value="Monster Category">Monster Category</option>
+                <option value="Monster Frame">Monster Category</option>
                 <option value="Monster Type">Monster Type</option>
                 <option value="Attribute">Attribute</option>
                 <option value="ATK">ATK</option>
@@ -458,7 +458,7 @@
     const defaultSortRules = {
         "Card Type": ["Monster", "Spell", "Trap", "Token"],
         "Spell/Trap Property": ["Normal", "Continuous", "Counter", "Equip", "Field", "Quick-Play", "Ritual"],
-        "Monster Category": ["Normal", "Effect", "Ritual", "Fusion", "Synchro", "Xyz", "Link"],
+        "Monster Frame": ["Normal", "Normal Pendulum", "Effect", "Effect Pendulum", "Ritual", "Ritual Pendulum", "Fusion", "Fusion Pendulum", "Synchro", "Synchro Pendulum", "Xyz", "Xyz Pendulum", "Link"],
         "Monster Type": ["Aqua", "Beast", "Beast-Warrior", "Creator God", "Cyberse", "Dinosaur", "Divine-Beast", "Dragon", "Fairy", "Fiend", "Fish", "Illusion", "Insect", "Machine", "Plant", "Psychic", "Pyro", "Reptile", "Rock", "Sea Serpent", "Spellcaster", "Thunder", "Warrior", "Winged Beast", "Wyrm", "Zombie"],
         "Attribute": ["DARK", "DIVINE", "EARTH", "FIRE", "LIGHT", "WATER", "WIND"],
         "ATK": ["Number", "?"],
@@ -506,7 +506,7 @@
         "Quantity": "Quantity",
         "Card Type": "Card Type",
         "Spell/Trap Property": "Spell/Trap Property",
-        "Monster Category": "Monster Category",
+        "Monster Frame": "Monster Frame",
         "Monster Type": "Monster Type",
         "Attribute": "Attribute",
         "Level/Rank/Link": "Level/Rank/Link",
@@ -728,7 +728,7 @@
 
         let typesStr = extract(wikitext, "types");
         d["Monster Type"] = "";
-        d["Monster Category"] = "";
+        d["Monster Frame"] = "";
 
         if (typesStr) {
             let typeParts = typesStr.split('/').map(s => s.trim());
@@ -739,9 +739,21 @@
                 let found = validTypes.find(v => v.toLowerCase() === part.toLowerCase());
                 if (found) { d["Monster Type"] = found; break; }
             }
+            
+            // Check if the wikitext types explicitly contain "Pendulum"
+            let isPendulum = typeParts.some(p => p.toLowerCase() === "pendulum");
+            
             for (let priorityCat of catPriority) {
                 let found = typeParts.find(p => p.toLowerCase() === priorityCat.toLowerCase());
-                if (found) { d["Monster Category"] = priorityCat; break; }
+                if (found) { 
+                    d["Monster Frame"] = priorityCat; 
+                    
+                    // Safely append Pendulum (excluding Links since they don't exist yet)
+                    if (isPendulum && priorityCat !== "Link") {
+                        d["Monster Frame"] += " Pendulum";
+                    }
+                    break; 
+                }
             }
         }
 
@@ -845,7 +857,7 @@
                                         c["Is Official"] = 1;
                                         c["Card Type"] = parsedData["Card Type"];
                                         c["Spell/Trap Property"] = parsedData["Spell/Trap Property"];
-                                        c["Monster Category"] = parsedData["Monster Category"];
+                                        c["Monster Frame"] = parsedData["Monster Frame"];
                                         c["Monster Type"] = parsedData["Monster Type"];
                                         c["Attribute"] = parsedData["Attribute"];
                                         c["Level/Rank/Link"] = parsedData["Level/Rank/Link"];
@@ -1014,7 +1026,7 @@
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Quantity')" onkeydown="handleEditKey(event, this)">${card["Quantity"] || 0}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Type')" onkeydown="handleEditKey(event, this)">${card["Card Type"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Spell/Trap Property')" onkeydown="handleEditKey(event, this)">${card["Spell/Trap Property"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Category')" onkeydown="handleEditKey(event, this)">${card["Monster Category"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Frame')" onkeydown="handleEditKey(event, this)">${card["Monster Frame"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Type')" onkeydown="handleEditKey(event, this)">${card["Monster Type"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Attribute')" onkeydown="handleEditKey(event, this)">${card["Attribute"] || ""}</td>
                 <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Level/Rank/Link')" onkeydown="handleEditKey(event, this)">${card["Level/Rank/Link"] || ""}</td>
@@ -1124,7 +1136,7 @@
         }
         
         // Ensure column order matches C++ Exporter exactly
-        const columns = ["Card Number", "Card Name", "Rarity", "Quantity", "Is Official", "Card Type", "Spell/Trap Property", "Monster Category", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF", "Card Password"];
+        const columns = ["Card Number", "Card Name", "Rarity", "Quantity", "Is Official", "Card Type", "Spell/Trap Property", "Monster Frame", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF", "Card Password"];
         
         const csv = Papa.unparse(collection, { columns: columns });
         
