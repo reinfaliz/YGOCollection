@@ -780,6 +780,7 @@
 
         document.querySelector('.btn-sync').disabled = true;
         let updatedCount = 0;
+        let updatedLog = [];
 
         // Create batches of 20 (Safe length for proxy URLs)
         const batches = [];
@@ -853,6 +854,10 @@
                                 let batchUpdated = false;
                                 collection.forEach(c => {
                                     if (c["Card Number"] === targetNumber) {
+                                        // Log it if the name actually changed
+                                        if (c["Card Name"] !== parsedData["Card Name"]) {
+                                            updatedLog.push(`[${c["Card Number"]}] ${c["Card Name"]} ➡️ ${parsedData["Card Name"]}`);
+                                        }
                                         c["Card Name"] = parsedData["Card Name"];
                                         c["Is Official"] = 1;
                                         c["Card Type"] = parsedData["Card Type"];
@@ -889,6 +894,12 @@
         if (updatedCount > 0) {
             statusLabel.textContent = `Update Complete! ${updatedCount} total card name(s) officially updated.`;
             statusLabel.style.color = "var(--status-success)";
+            
+            // Deduplicate the log and show the popup
+            let uniqueLog = [...new Set(updatedLog)];
+            if (uniqueLog.length > 0) {
+                alert("The following cards received official name updates:\n\n" + uniqueLog.join("\n") + "\n\nYou can physically move these specific cards, then use the ☰ handle to fix their digital position!");
+            }
         } else {
             statusLabel.textContent = "Update Complete. Pending cards are still waiting for official release.";
             statusLabel.style.color = "var(--status-default)";
