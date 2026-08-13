@@ -1138,6 +1138,12 @@
         // Cancel the row selection! It was a double-click!
         clearTimeout(rowClickTimer);
         
+        // Actively block Grammarly and native browser spellcheckers
+        cell.setAttribute('data-gramm', 'false');
+        cell.setAttribute('data-gramm_editor', 'false');
+        cell.setAttribute('data-enable-grammarly', 'false');
+        cell.spellcheck = false;
+
         // Turn on editing and focus the cell
         cell.contentEditable = "true";
         cell.focus();
