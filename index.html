@@ -382,6 +382,7 @@
         <div style="margin-bottom: 15px;">
             <label style="font-weight: bold; font-size: 0.9em;">Select Category to Modify:</label>
             <select id="ruleCategorySelect" style="width: 100%; margin-top: 5px;" onchange="renderRuleList()">
+                <option value="Rarity">Rarity</option>
                 <option value="Card Type">Card Type</option>
                 <option value="Spell/Trap Property">Spell/Trap Property</option>
                 <option value="Monster Frame">Monster Frame</option>
@@ -456,6 +457,19 @@
 
     // --- Custom Sorting Rules Data ---
     const defaultSortRules = {
+        "Rarity": [
+            "Common", "Normal Rare", "Short Print", "Super Short Print", "Rare",
+            "Super Rare", "Ultra Rare", "Ultimate Rare", "Ghost Rare", "Holographic Rare",
+            "Secret Rare", "Prismatic Secret Rare", "Ultra Secret Rare", "Secret Ultra Rare", "Extra Secret Rare", "20th Secret Rare", "10000 Secret Rare", "Quarter Century Secret Rare", "Starlight Rare", "Grand Master Rare",
+            "Gold Rare", "Gold Secret Rare", "Ghost/Gold Rare", "Premium Gold Rare", "Platinum Rare", "Platinum Secret Rare",
+            "Millennium Rare", "Millennium Super Rare", "Millennium Ultra Rare", "Millennium Secret Rare", "Millennium Gold Rare",
+            "Normal Parallel Rare", "Rare Parallel Rare", "Super Parallel Rare", "Ultra Parallel Rare", "Secret Parallel Rare", "Extra Secret Parallel Rare", "Holographic Parallel Rare",
+            "Duel Terminal Normal Parallel Rare", "Duel Terminal Normal Rare Parallel Rare", "Duel Terminal Rare Parallel Rare", "Duel Terminal Super Parallel Rare", "Duel Terminal Ultra Parallel Rare", "Duel Terminal Secret Parallel Rare",
+            "Kaiba Corporation Common", "Kaiba Corporation Rare", "Kaiba Corporation Super Rare", "Kaiba Corporation Ultra Rare",
+            "Rush Rare", "Gold Rush Rare", "Over Rush Rare", "Full Over Rush Rare",
+            "Ultra Rare (Special Blue Version)", "Ultra Rare (Special Purple Version)", "Ultra Rare (Special Red Version)", "Secret Rare (Special Blue Version)", "Secret Rare (Special Red Version)", "Rush Rare (Special Red Version)", "Over Rush Rare (Premium Black Version)", "Quarter Century Secret Rare Tokyo Dome Green Version", "Quarter Century Secret Rare (Special Version)",
+            "Holofoil Rare", "Starfoil Rare", "Mosaic Rare", "Shatterfoil Rare", "Collector's Rare", "Ultra Rare (Pharaoh's Rare)"
+        ],
         "Card Type": ["Monster", "Spell", "Trap", "Token"],
         "Spell/Trap Property": ["Normal", "Continuous", "Counter", "Equip", "Field", "Quick-Play", "Ritual"],
         "Monster Frame": ["Normal", "Normal Pendulum", "Effect", "Effect Pendulum", "Ritual", "Ritual Pendulum", "Fusion", "Fusion Pendulum", "Synchro", "Synchro Pendulum", "Xyz", "Xyz Pendulum", "Link"],
