@@ -1147,17 +1147,20 @@
     }
 
     function finishEdit(cell, index, key) {
-        // Clear the text selection so the browser doesn't panic and scroll-jump
-        window.getSelection().removeAllRanges();
+        // Snapshot the exact scroll position of the table wrapper
+        const wrapper = document.querySelector('.table-wrapper');
+        const scrollSnapshot = wrapper.scrollTop;
 
-        // Turn off editing mode
+        // Clear selection and turn off editing
+        window.getSelection().removeAllRanges();
         cell.contentEditable = "false";
         
-        // Save the raw typed data to the array
+        // Save and visually update the data
         updateCellData(index, key, cell.innerText);
-        
-        // Force the cell to visually update with the cleaned data
         cell.innerText = collection[index][key];
+
+        // Forcefully lock the scrollbar back to the snapshot position
+        wrapper.scrollTop = scrollSnapshot;
     }
 
     function deleteSelected() {
