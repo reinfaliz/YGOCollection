@@ -1147,11 +1147,17 @@
     }
 
     function finishEdit(cell, index, key) {
+        // Clear the text selection so the browser doesn't panic and scroll-jump
+        window.getSelection().removeAllRanges();
+
         // Turn off editing mode
         cell.contentEditable = "false";
         
-        // Save the data to the array (using your existing updateCellData function)
+        // Save the raw typed data to the array
         updateCellData(index, key, cell.innerText);
+        
+        // Force the cell to visually update with the cleaned data
+        cell.innerText = collection[index][key];
     }
 
     function deleteSelected() {
