@@ -978,6 +978,82 @@
         }
     }
 
+    // --- Data Verification Engine ---
+    function verifyCardData(card) {
+        let errors = [];
+        
+        // Helper functions for data types
+        const isEmpty = (val) => val === undefined || val === null || String(val).trim() === "";
+        const isNum = (val) => {
+            const str = String(val).trim();
+            return str !== "" && !isNaN(Number(str));
+        };
+        const isNumOrQ = (val) => isNum(val) || String(val).trim() === "?";
+
+        // Null Checks
+        if (isEmpty(card["Card Name"])) errors.push("Card Name is missing.");
+        if (isEmpty(card["Rarity"])) errors.push("Rarity is missing.");
+
+        // Card Type Validation
+        const validCardTypes = defaultSortRules["Card Type"];
+        if (!validCardTypes.includes(card["Card Type"])) {
+            errors.push("Card Type is invalid or missing.");
+            return errors; // Abort deeper checks if Card Type is completely broken
+        }
+
+        if (card["Card Type"] === "Monster") {
+            // Spell/Trap Property
+            if (!isEmpty(card["Spell/Trap Property"])) errors.push("Monsters must not have a Spell/Trap Property.");
+            
+            // Monster String Categories
+            if (!defaultSortRules["Monster Frame"].includes(card["Monster Frame"])) errors.push("Monster Frame is invalid or missing.");
+            if (!defaultSortRules["Monster Type"].includes(card["Monster Type"])) errors.push("Monster Type is invalid or missing.");
+            if (!defaultSortRules["Attribute"].includes(card["Attribute"])) errors.push("Attribute is invalid or missing.");
+            
+            // Level/Rank/Link
+            if (!isNum(card["Level/Rank/Link"])) errors.push("Level/Rank/Link must be a number.");
+            
+            // ATK
+            if (!isNumOrQ(card["ATK"])) errors.push("ATK must be a number or '?'.");
+
+            // Pendulum Logic
+            const pendulumFrames = ["Normal Pendulum", "Effect Pendulum", "Ritual Pendulum", "Fusion Pendulum", "Synchro Pendulum", "Xyz Pendulum"];
+            if (pendulumFrames.includes(card["Monster Frame"])) {
+                if (!isNum(card["Pendulum Scale"])) errors.push("Pendulum Scale must be a number.");
+            } else {
+                if (!isEmpty(card["Pendulum Scale"])) errors.push("Non-Pendulum monsters must not have a Pendulum Scale.");
+            }
+
+            // Link DEF Logic
+            if (card["Monster Frame"] === "Link") {
+                if (!isEmpty(card["DEF"])) errors.push("Link monsters must not have DEF.");
+            } else {
+                if (!isNumOrQ(card["DEF"])) errors.push("DEF must be a number or '?'.");
+            }
+        } 
+        else if (card["Card Type"] === "Spell" || card["Card Type"] === "Trap") {
+            // Spell & Trap Logic
+            if (!defaultSortRules["Spell/Trap Property"].includes(card["Spell/Trap Property"])) {
+                errors.push("Spell/Trap Property is invalid or missing.");
+            }
+
+            const forbiddenFields = ["Monster Frame", "Monster Type", "Attribute", "Level/Rank/Link", "Pendulum Scale", "ATK", "DEF"];
+            let hasForbidden = false;
+            forbiddenFields.forEach(field => {
+                if (!isEmpty(card[field])) hasForbidden = true;
+            });
+            if (hasForbidden) {
+                errors.push("Spells/Traps must not contain Monster stats (ATK, DEF, Level, etc.).");
+            }
+        } 
+        else if (card["Card Type"] === "Token") {
+            // Token Logic
+            if (!isEmpty(card["Spell/Trap Property"])) errors.push("Tokens must not have a Spell/Trap Property.");
+        }
+
+        return errors;
+    }
+
     // --- Array Data Management ---
     function saveCardToDatabase() {
         const rarity = document.getElementById('rarityCombo').value;
@@ -990,6 +1066,15 @@
             "Quantity": qty,
             ...currentCardDetails
         };
+        
+        // --- DATA VERIFICATION INTERCEPT ---
+        const dataErrors = verifyCardData(newCard);
+        if (dataErrors.length > 0) {
+            const warningMessage = "Issues found:\n" + dataErrors.map(e => "- " + e).join("\n") + "\n\nData is incomplete. Add anyway?";
+            if (!confirm(warningMessage)) {
+                return; // User clicked Cancel, abort the save!
+            }
+        }
         
         // Check where the user wants to insert the card
         const insertPosition = document.getElementById('insertPositionCombo').value;
@@ -1969,7 +2054,7 @@
                 html += `
                     <div style="margin-top: 15px;">
                         <label style="cursor: pointer; font-weight: bold;">
-                            <input type="checkbox" ${state.incQ ? "checked" : ""} onchange="updateNumericFilter('${category}', 'incQ', this.checked)"> Include "?" (Question Mark)
+                            <input type="checkbox" ${state.incQ ? "checked" : ""} onchange="updateNumericFilter('${category}', 'incQ', this.checked)"> Include "?" (Undefined)
                         </label>
                     </div>
                 `;
