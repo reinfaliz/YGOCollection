@@ -1111,23 +1111,23 @@
                     onmouseleave="this.parentElement.setAttribute('draggable', 'false')">☰</td>
                 <td style="text-align: center; padding: 2px;">
                     <a href="https://yugipedia.com/wiki/${card["Card Number"]}" target="_blank" onclick="event.stopPropagation()" title="View on Yugipedia">
-                        <img class="lazy-card-img card-thumb" data-passcode="${card["Card Password"] || ""}" ${srcAttr} ${queuedAttr} alt=" ">
+                        <img class="lazy-card-img card-thumb" data-passcode="${card["Card Password"] ?? ""}" ${srcAttr} ${queuedAttr} alt=" ">
                     </a>
                 </td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')" onkeydown="handleEditKey(event, this)">${card["Card Number"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Name')" onkeydown="handleEditKey(event, this)">${card["Card Name"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Rarity')" onkeydown="handleEditKey(event, this)">${card["Rarity"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Quantity')" onkeydown="handleEditKey(event, this)">${card["Quantity"] || 0}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Type')" onkeydown="handleEditKey(event, this)">${card["Card Type"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Spell/Trap Property')" onkeydown="handleEditKey(event, this)">${card["Spell/Trap Property"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Frame')" onkeydown="handleEditKey(event, this)">${card["Monster Frame"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Type')" onkeydown="handleEditKey(event, this)">${card["Monster Type"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Attribute')" onkeydown="handleEditKey(event, this)">${card["Attribute"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Level/Rank/Link')" onkeydown="handleEditKey(event, this)">${card["Level/Rank/Link"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Pendulum Scale')" onkeydown="handleEditKey(event, this)">${card["Pendulum Scale"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'ATK')" onkeydown="handleEditKey(event, this)">${card["ATK"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'DEF')" onkeydown="handleEditKey(event, this)">${card["DEF"] || ""}</td>
-                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Password')" onkeydown="handleEditKey(event, this)">${card["Card Password"] || ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Number')" onkeydown="handleEditKey(event, this)">${card["Card Number"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Name')" onkeydown="handleEditKey(event, this)">${card["Card Name"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Rarity')" onkeydown="handleEditKey(event, this)">${card["Rarity"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Quantity')" onkeydown="handleEditKey(event, this)">${card["Quantity"] ?? 0}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Type')" onkeydown="handleEditKey(event, this)">${card["Card Type"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Spell/Trap Property')" onkeydown="handleEditKey(event, this)">${card["Spell/Trap Property"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Frame')" onkeydown="handleEditKey(event, this)">${card["Monster Frame"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Monster Type')" onkeydown="handleEditKey(event, this)">${card["Monster Type"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Attribute')" onkeydown="handleEditKey(event, this)">${card["Attribute"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Level/Rank/Link')" onkeydown="handleEditKey(event, this)">${card["Level/Rank/Link"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Pendulum Scale')" onkeydown="handleEditKey(event, this)">${card["Pendulum Scale"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'ATK')" onkeydown="handleEditKey(event, this)">${card["ATK"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'DEF')" onkeydown="handleEditKey(event, this)">${card["DEF"] ?? ""}</td>
+                <td class="editable-cell" ondblclick="makeEditable(this, event)" onblur="finishEdit(this, ${index}, 'Card Password')" onkeydown="handleEditKey(event, this)">${card["Card Password"] ?? ""}</td>
             `;
             tbody.appendChild(tr);
         });
