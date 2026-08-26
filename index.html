@@ -322,6 +322,7 @@
             style="flex-grow: 1; font-size: 2em; font-weight: bold; border: none; border-bottom: 2px solid transparent; outline: none; background: transparent; transition: border-color 0.2s; padding: 0; color: inherit;" 
             onfocus="this.style.borderBottom='2px solid #007bff'" 
             onblur="this.style.borderBottom='2px solid transparent'"
+            onchange="saveCollectionName()"
             title="Click to edit collection name">
         
         <button id="themeToggle" onclick="toggleTheme()" 
@@ -356,7 +357,7 @@
         <input type="number" id="quantitySpinBox" min="1" value="1" disabled onkeypress="handleEnter(event, 'save')" style="width: 60px;">
         <button id="addBtn" onclick="saveCardToDatabase()" disabled>Add to Collection</button>
         <label style="margin-left: 10px;">Add to:</label>
-        <select id="insertPositionCombo">
+        <select id="insertPositionCombo" onchange="saveInsertPositionSetting()">
             <option value="top">Top</option>
             <option value="bottom">Bottom</option>
         </select>
@@ -587,6 +588,15 @@
     function saveAutoScrollSetting() {
         const isChecked = document.getElementById('autoScrollCheckbox').checked;
         localStorage.setItem('ygoAutoScroll', isChecked);
+    }
+
+    // --- UI Settings Save Functions ---
+    function saveCollectionName() {
+        localStorage.setItem('ygoCollectionName', document.getElementById('collectionNameInput').value);
+    }
+
+    function saveInsertPositionSetting() {
+        localStorage.setItem('ygoInsertPosition', document.getElementById('insertPositionCombo').value);
     }
 
     // --- Light / Dark Mode System ---
@@ -1463,7 +1473,7 @@
         
         collection = await parseFilePromisified(file);
         document.getElementById('collectionNameInput').value = file.name.replace(/\.[^/.]+$/, "");
-        
+        saveCollectionName();
         renderTable();
         autoSave();
         statusLabel.textContent = `Successfully imported ${collection.length} cards.`;
@@ -1494,6 +1504,7 @@
         // The top item's name dictates the new Collection Name
         if (importOrderArray.length > 0) {
             document.getElementById('collectionNameInput').value = importOrderArray[0].name;
+            saveCollectionName();
         }
 
         renderTable();
@@ -1996,6 +2007,18 @@
         const savedAutoScroll = localStorage.getItem('ygoAutoScroll');
         if (savedAutoScroll !== null) {
             document.getElementById('autoScrollCheckbox').checked = (savedAutoScroll === 'true');
+        }
+
+        // Check for saved Insert Position setting
+        const savedInsertPos = localStorage.getItem('ygoInsertPosition');
+        if (savedInsertPos !== null) {
+            document.getElementById('insertPositionCombo').value = savedInsertPos;
+        }
+
+        // Check for saved Collection Name
+        const savedColName = localStorage.getItem('ygoCollectionName');
+        if (savedColName !== null) {
+            document.getElementById('collectionNameInput').value = savedColName;
         }
         
         // Check for Auto-Save data
