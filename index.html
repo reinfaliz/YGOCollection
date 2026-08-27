@@ -1269,6 +1269,11 @@
 
         // Ensure filters re-apply after table regenerates
         applyFilters();
+
+        // Update sticky column positions.
+        requestAnimationFrame(() => {
+            updateStickyColumns();
+        });
     }
 
     // --- Inline Edit Saver ---
@@ -2036,6 +2041,8 @@
                 console.error("Could not load auto-save data.");
             }
         }
+
+        window.addEventListener('resize', updateStickyColumns);
     };
 
     // --- HTML5 Drag & Drop Reordering ---
@@ -2356,6 +2363,64 @@
             // Hide or Show the row instantly without deleting it
             rows[index].style.display = match ? '' : 'none';
         });
+    }
+
+    // --- Sticky Column Engine ---
+    function updateStickyColumns() {
+        const table = document.querySelector('table'); 
+        if (!table) return;
+        const headers = table.querySelectorAll('thead th');
+        
+        // We need at least 6 columns to freeze
+        if (headers.length < 6) return;
+
+        // Calculate the exact pixel position for each sticky column
+        let lefts = [0];
+        for (let i = 0; i < 5; i++) {
+            // .offsetWidth gets the exact rendered pixel width of the column
+            lefts.push(lefts[i] + headers[i].offsetWidth);
+        }
+
+        // Create or update our dynamic style block
+        let styleTag = document.getElementById('sticky-cols-style');
+        if (!styleTag) {
+            styleTag = document.createElement('style');
+            styleTag.id = 'sticky-cols-style';
+            document.head.appendChild(styleTag);
+        }
+
+        // Inject the CSS
+        styleTag.innerHTML = `
+            /* Apply sticky to first 6 columns (Drag Handle + 5 Data Columns) */
+            th:nth-child(1), td:nth-child(1) { position: sticky; left: ${lefts[0]}px; z-index: 1; }
+            th:nth-child(2), td:nth-child(2) { position: sticky; left: ${lefts[1]}px; z-index: 1; }
+            th:nth-child(3), td:nth-child(3) { position: sticky; left: ${lefts[2]}px; z-index: 1; }
+            th:nth-child(4), td:nth-child(4) { position: sticky; left: ${lefts[3]}px; z-index: 1; }
+            th:nth-child(5), td:nth-child(5) { position: sticky; left: ${lefts[4]}px; z-index: 1; }
+            
+            /* The 6th column (Quantity) gets a hard right-border so it looks like a clean wall */
+            th:nth-child(6), td:nth-child(6) { 
+                position: sticky; 
+                left: ${lefts[5]}px; 
+                z-index: 1; 
+                border-right: 2px solid #aaa; 
+            }
+
+            /* Keep table headers on top of rows vertically AND horizontally */
+            thead th { position: sticky; top: 0; z-index: 2; background-color: #f2f2f2; }
+            thead th:nth-child(-n+6) { z-index: 3; }
+
+            /* Give rows a solid background so scrolling text doesn't bleed through the sticky cells */
+            tbody tr { background-color: #ffffff; }
+            
+            /* Make sticky cells inherit the row background (supports hover effects perfectly) */
+            td:nth-child(-n+6), th:nth-child(-n+6) { background-color: inherit; }
+            
+            /* Dark Mode Overrides */
+            body.dark-mode thead th { background-color: #2c2c2c; }
+            body.dark-mode tbody tr { background-color: #1e1e1e; }
+            body.dark-mode th:nth-child(6), body.dark-mode td:nth-child(6) { border-right: 2px solid #555; }
+        `;
     }
 </script>
 </body>
