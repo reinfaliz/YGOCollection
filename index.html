@@ -662,50 +662,31 @@
         }
 
         document.getElementById('searchBtn').disabled = true;
-        statusLabel.textContent = "Searching Yugipedia through proxies...";
+        statusLabel.textContent = "Searching Yugipedia...";
         statusLabel.style.color = "var(--status-info)";
         currentCardNumber = inputStr;
 
         // The raw API URL
-        const rawApiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${encodeURIComponent(inputStr)}`;
-
-        // The Proxy Waterfall: If Cloudflare blocks one, it automatically tries the next.
-        const proxies = [
-            `https://corsproxy.io/?${encodeURIComponent(rawApiUrl)}`,
-            `https://api.allorigins.win/get?url=${encodeURIComponent(rawApiUrl)}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawApiUrl)}`
-        ];
+        const rawApiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&origin=*&titles=${encodeURIComponent(inputStr)}`;
 
         let data = null;
         let success = false;
 
-        for (let proxy of proxies) {
-            try {
-                const response = await fetch(proxy);
-                if (!response.ok) continue; 
-                
-                let json = await response.json();
-                
-                // allorigins.win wraps the actual data in a "contents" string
-                if (json.contents) {
-                    try {
-                        json = JSON.parse(json.contents);
-                    } catch (e) { continue; }
-                }
-                
-                // Check if Cloudflare hijacked the request and sent HTML instead of JSON
-                if (json && json.query) {
-                    data = json;
-                    success = true;
-                    break; // Stop trying proxies, we have the data!
-                }
-            } catch (error) {
-                console.log("Proxy failed, falling back...");
+        try {
+            const response = await fetch(rawApiUrl);
+            let json = await response.json();
+            
+            // Check if Cloudflare hijacked the request and sent HTML instead of JSON
+            if (json && json.query) {
+                data = json;
+                success = true;
             }
+        } catch (error) {
+            console.log("Yugipedia request failed.");
         }
 
         if (!success) {
-            statusLabel.textContent = "Network Error. Yugipedia's anti-bot system blocked the request.";
+            statusLabel.textContent = "Network Error. Please try again later.";
             statusLabel.style.color = "var(--status-error)";
             document.getElementById('searchBtn').disabled = false;
             return;
