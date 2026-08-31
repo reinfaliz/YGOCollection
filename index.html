@@ -667,7 +667,7 @@
         currentCardNumber = inputStr;
 
         // The raw API URL
-        const rawApiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&origin=*&titles=${encodeURIComponent(inputStr)}`;
+        const rawApiUrl = `https://yugipedia.com/api.php?action=query&format=json&prop=revisions&rvprop=content&redirects=1&titles=${encodeURIComponent(inputStr)}`;
 
         let data = null;
         let success = false;
