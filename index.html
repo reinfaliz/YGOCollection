@@ -2344,6 +2344,11 @@
             // Hide or Show the row instantly without deleting it
             rows[index].style.display = match ? '' : 'none';
         });
+
+        // Recalculate sticky column positions because hiding rows changes column widths!
+        requestAnimationFrame(() => {
+            updateStickyColumns();
+        });
     }
 
     // --- Sticky Column Engine ---
